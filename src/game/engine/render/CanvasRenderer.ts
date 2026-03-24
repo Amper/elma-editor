@@ -228,6 +228,14 @@ export class CanvasRenderer {
     ctx.fill();
   }
 
+  /** Draw a remote player's bike (public for collab mode). */
+  drawRemoteBike(motor: MotorState, alpha = 1.0): void {
+    const prev = this.ctx.globalAlpha;
+    this.ctx.globalAlpha = alpha;
+    this.drawBike(motor);
+    this.ctx.globalAlpha = prev;
+  }
+
   private drawHUD(state: GameState): void {
     const ctx = this.ctx;
     const width = this.canvas.clientWidth;

@@ -15,11 +15,15 @@ export const useHasSelection = () =>
   useEditorStore((s) => {
     const sel = s.selection;
     return (
-      sel.polygonIndices.size > 0 ||
-      sel.objectIndices.size > 0 ||
-      sel.vertexIndices.size > 0
+      sel.polygonIds.size > 0 ||
+      sel.objectIds.size > 0 ||
+      sel.vertexSelections.size > 0
     );
   });
+
+export const useIsCollaborating = () => useEditorStore((s) => s.isCollaborating);
+export const useRemoteUsers = () => useEditorStore((s) => s.remoteUsers);
+export const useShowCollabPanel = () => useEditorStore((s) => s.showCollabPanel);
 
 /** Call these outside of React components (imperative). */
 export function undo() {

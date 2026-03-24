@@ -59,13 +59,13 @@ export class GLContext {
       ['u_viewProjection', 'u_texture', 'u_textureSize', 'u_hasTexture', 'u_color'],
       ['a_position']);
     this.spriteProgram = this.createProgram(SPRITE_VERT, SPRITE_FRAG,
-      ['u_viewProjection', 'u_atlas', 'u_origin', 'u_extentU', 'u_extentV', 'u_uvRect'],
+      ['u_viewProjection', 'u_atlas', 'u_origin', 'u_extentU', 'u_extentV', 'u_uvRect', 'u_alpha'],
       ['a_position']);
     this.maskSpriteProgram = this.createProgram(MASK_SPRITE_VERT, MASK_SPRITE_FRAG,
       ['u_viewProjection', 'u_maskAtlas', 'u_texture', 'u_origin', 'u_extentU', 'u_extentV', 'u_uvRect', 'u_textureSize'],
       ['a_position']);
     this.fallbackProgram = this.createProgram(FALLBACK_VERT, FALLBACK_FRAG,
-      ['u_viewProjection', 'u_color'],
+      ['u_viewProjection', 'u_color', 'u_alpha'],
       ['a_position']);
   }
 

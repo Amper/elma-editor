@@ -10,6 +10,7 @@ import {
   ScissorsIcon, SlidersHorizontalIcon, SubtractSquareIcon,
   TrashIcon,
   UniteSquareIcon,
+  UsersIcon,
   WarningIcon,
 } from "@phosphor-icons/react";
 
@@ -30,21 +31,24 @@ export function MenuBar() {
   const topologyErrors = useEditorStore((s) => s.topologyErrors);
   const showPropPanel = useEditorStore((s) => s.showPropPanel);
   const setShowPropPanel = useEditorStore((s) => s.setShowPropPanel);
-  const hasSelection = selection.polygonIndices.size > 0 || selection.objectIndices.size > 0;
+  const showCollabPanel = useEditorStore((s) => s.showCollabPanel);
+  const setShowCollabPanel = useEditorStore((s) => s.setShowCollabPanel);
+  const isCollaborating = useEditorStore((s) => s.isCollaborating);
+  const hasSelection = selection.polygonIds.size > 0 || selection.objectIds.size > 0;
 
   const deleteSelection = () => {
-    if (selection.objectIndices.size > 0) {
-      removeObjects([...selection.objectIndices]);
+    if (selection.objectIds.size > 0) {
+      removeObjects([...selection.objectIds]);
     }
-    if (selection.polygonIndices.size > 0) {
-      removePolygons([...selection.polygonIndices]);
+    if (selection.polygonIds.size > 0) {
+      removePolygons([...selection.polygonIds]);
     }
   };
   const canPaste = clipboard !== null;
-  const canMerge = selection.polygonIndices.size >= 1;
-  const canSplit = selection.polygonIndices.size >= 1 && selection.polygonIndices.size <= 2;
-  const canAutoGrass = level != null && [...selection.polygonIndices].some(
-    (i) => level.polygons[i] && !level.polygons[i]!.grass,
+  const canMerge = selection.polygonIds.size >= 1;
+  const canSplit = selection.polygonIds.size >= 1 && selection.polygonIds.size <= 2;
+  const canAutoGrass = level != null && level.polygons.some(
+    (p) => selection.polygonIds.has(p.id) && !p.grass,
   );
 
   return (
@@ -121,6 +125,29 @@ export function MenuBar() {
           {topologyErrors.length}
         </span>
       )}
+      <button
+        className="btn btn--text"
+        onClick={() => setShowCollabPanel(!showCollabPanel)}
+        title="Toggle collaboration panel"
+        style={{ marginLeft: 'auto', position: 'relative' }}
+      >
+        <UsersIcon size={16} />
+        <span className="btn--text-label">Collab</span>
+        {isCollaborating && (
+          <span
+            style={{
+              position: 'absolute',
+              top: 4,
+              right: 4,
+              width: 7,
+              height: 7,
+              borderRadius: '50%',
+              background: '#4caf50',
+              border: '1px solid var(--color-bg-tertiary)',
+            }}
+          />
+        )}
+      </button>
       <button
         className="btn btn--text menu-bar__panel-toggle"
         onClick={() => setShowPropPanel(!showPropPanel)}

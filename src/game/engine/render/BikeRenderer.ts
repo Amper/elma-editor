@@ -41,6 +41,8 @@ export class BikeRenderer {
   private atlas: TextureAtlas | null = null;
   private regions: BikeAtlasRegions | null = null;
   private hasLgr = false;
+  /** Global alpha for rendering (0..1). Set < 1 for remote/ghost bikes. */
+  alpha = 1.0;
 
   constructor(ctx: GLContext) {
     this.ctx = ctx;
@@ -79,6 +81,7 @@ export class BikeRenderer {
 
     ctx.useProgram(ctx.spriteProgram);
     ctx.setUniform(ctx.spriteProgram, 'u_viewProjection', viewProj);
+    ctx.setUniform(ctx.spriteProgram, 'u_alpha', this.alpha);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.atlas.texture);
     ctx.setUniformInt(ctx.spriteProgram, 'u_atlas', 0);
@@ -268,10 +271,18 @@ export class BikeRenderer {
   /** Fallback wireframe bike (same as CanvasRenderer) */
   private drawFallback(motor: MotorState, viewProj: Float32Array): void {
     const ctx = this.ctx;
+    const gl = ctx.gl;
     const prog = ctx.fallbackProgram;
 
     ctx.useProgram(prog);
     ctx.setUniform(prog, 'u_viewProjection', viewProj);
+    ctx.setUniform(prog, 'u_alpha', this.alpha);
+
+    const needBlend = this.alpha < 1.0;
+    if (needBlend) {
+      gl.enable(gl.BLEND);
+      gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    }
 
     // Draw wheels as circle outlines
     this.drawCircle(motor.leftWheel.r, motor.leftWheel.radius, [0, 0.8, 0, 1]);
@@ -288,6 +299,10 @@ export class BikeRenderer {
 
     // Draw head
     this.drawCircle(motor.headR, 0.238, [1.0, 0.8, 0.53, 1]);
+
+    if (needBlend) {
+      gl.disable(gl.BLEND);
+    }
   }
 
   private drawCircle(center: Vec2, radius: number, color: number[]): void {

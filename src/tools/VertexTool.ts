@@ -16,7 +16,7 @@ export class VertexTool implements EditorTool {
 
   // ── Move ──
   private moveStartWorld: Vec2 = { x: 0, y: 0 };
-  private moveOriginals: Array<{ polyIdx: number; vertIdx: number; pos: Vec2 }> = [];
+  private moveOriginals: Array<{ polyId: string; vertIdx: number; pos: Vec2 }> = [];
 
   // ── Hover ──
   private hoveredHit: HitTestResult = { kind: 'none' };
@@ -57,31 +57,31 @@ export class VertexTool implements EditorTool {
     if (hit.kind === 'vertex') {
       const isAlreadySelected = this.isVertexSelected(
         store.selection,
-        hit.polygonIndex,
+        hit.polygonId,
         hit.vertexIndex,
       );
 
       if (e.shiftKey) {
         // Shift+click toggles individual vertex
         if (isAlreadySelected) {
-          this.deselectVertex(hit.polygonIndex, hit.vertexIndex, store);
+          this.deselectVertex(hit.polygonId, hit.vertexIndex, store);
         } else {
-          this.selectVertex(hit.polygonIndex, hit.vertexIndex, true, store);
+          this.selectVertex(hit.polygonId, hit.vertexIndex, true, store);
         }
       } else if (isAlreadySelected) {
         // Click on already-selected vertex → start moving all selected
         this.startMove(e.worldPos, store);
       } else {
         // Click on unselected vertex → select it exclusively, start moving
-        this.selectVertex(hit.polygonIndex, hit.vertexIndex, false, store);
+        this.selectVertex(hit.polygonId, hit.vertexIndex, false, store);
         this.startMove(e.worldPos, this.getStore());
       }
     } else if (hit.kind === 'edge') {
       // Insert vertex on edge, select it, and start dragging
       const insertIdx = hit.edgeIndex + 1;
-      store.insertVertex(hit.polygonIndex, insertIdx, e.worldPos);
+      store.insertVertex(hit.polygonId, insertIdx, e.worldPos);
       // Select the newly inserted vertex exclusively
-      this.selectVertex(hit.polygonIndex, insertIdx, false, this.getStore());
+      this.selectVertex(hit.polygonId, insertIdx, false, this.getStore());
       this.startMove(e.worldPos, this.getStore());
     } else {
       // Empty space — start rubber-band
@@ -111,7 +111,7 @@ export class VertexTool implements EditorTool {
 
         store.moveVertices(
           this.moveOriginals.map((v) => ({
-            polyIdx: v.polyIdx,
+            polyId: v.polyId,
             vertIdx: v.vertIdx,
             newPos: { x: v.pos.x + snapDx, y: v.pos.y + snapDy },
           })),
@@ -174,19 +174,18 @@ export class VertexTool implements EditorTool {
     if (store.level) {
       ctx.strokeStyle = withAlpha(t.toolVertexHover, 0.5);
       ctx.lineWidth = 1 / zoom;
-      for (let pi = 0; pi < store.level.polygons.length; pi++) {
-        const poly = store.level.polygons[pi]!;
+      for (const poly of store.level.polygons) {
         if (!store.showGrass && poly.grass) continue;
         for (let vi = 0; vi < poly.vertices.length; vi++) {
-          if (this.isVertexSelected(store.selection, pi, vi)) continue;
+          if (this.isVertexSelected(store.selection, poly.id, vi)) continue;
           const v = poly.vertices[vi]!;
           ctx.strokeRect(v.x - size / 2, v.y - size / 2, size, size);
         }
       }
 
       // Draw selected vertices as filled squares
-      for (const [pi, vertSet] of store.selection.vertexIndices) {
-        const poly = store.level.polygons[pi];
+      for (const [polyId, vertSet] of store.selection.vertexSelections) {
+        const poly = store.level.polygons.find(p => p.id === polyId);
         if (!poly) continue;
         for (const vi of vertSet) {
           const v = poly.vertices[vi];
@@ -203,7 +202,7 @@ export class VertexTool implements EditorTool {
         const { position } = this.hoveredHit;
         const isSelected = this.isVertexSelected(
           store.selection,
-          this.hoveredHit.polygonIndex,
+          this.hoveredHit.polygonId,
           this.hoveredHit.vertexIndex,
         );
         // Draw hover square (outline for unselected, brighter for selected)
@@ -250,7 +249,7 @@ export class VertexTool implements EditorTool {
       const store = this.getStore();
       return this.isVertexSelected(
         store.selection,
-        this.hoveredHit.polygonIndex,
+        this.hoveredHit.polygonId,
         this.hoveredHit.vertexIndex,
       )
         ? 'move'
@@ -264,15 +263,15 @@ export class VertexTool implements EditorTool {
 
   private isVertexSelected(
     sel: SelectionState,
-    polyIdx: number,
+    polyId: string,
     vertIdx: number,
   ): boolean {
-    const vertSet = sel.vertexIndices.get(polyIdx);
+    const vertSet = sel.vertexSelections.get(polyId);
     return vertSet ? vertSet.has(vertIdx) : false;
   }
 
   private selectVertex(
-    polyIdx: number,
+    polyId: string,
     vertIdx: number,
     additive: boolean,
     store: EditorState,
@@ -280,10 +279,10 @@ export class VertexTool implements EditorTool {
     const sel = additive
       ? this.cloneSelection(store.selection)
       : this.emptySelection();
-    let vertSet = sel.vertexIndices.get(polyIdx);
+    let vertSet = sel.vertexSelections.get(polyId);
     if (!vertSet) {
       vertSet = new Set();
-      sel.vertexIndices.set(polyIdx, vertSet);
+      sel.vertexSelections.set(polyId, vertSet);
     }
     vertSet.add(vertIdx);
     // Vertex tool doesn't select whole polygons or objects
@@ -291,16 +290,16 @@ export class VertexTool implements EditorTool {
   }
 
   private deselectVertex(
-    polyIdx: number,
+    polyId: string,
     vertIdx: number,
     store: EditorState,
   ) {
     const sel = this.cloneSelection(store.selection);
-    const vertSet = sel.vertexIndices.get(polyIdx);
+    const vertSet = sel.vertexSelections.get(polyId);
     if (vertSet) {
       vertSet.delete(vertIdx);
       if (vertSet.size === 0) {
-        sel.vertexIndices.delete(polyIdx);
+        sel.vertexSelections.delete(polyId);
       }
     }
     store.setSelection(sel);
@@ -318,15 +317,15 @@ export class VertexTool implements EditorTool {
   private snapshotOriginals(store: EditorState) {
     const level = store.level!;
     const sel = store.selection;
-    const originals: Array<{ polyIdx: number; vertIdx: number; pos: Vec2 }> = [];
+    const originals: Array<{ polyId: string; vertIdx: number; pos: Vec2 }> = [];
 
-    for (const [pi, vertSet] of sel.vertexIndices) {
-      const poly = level.polygons[pi];
+    for (const [polyId, vertSet] of sel.vertexSelections) {
+      const poly = level.polygons.find(p => p.id === polyId);
       if (!poly) continue;
       for (const vi of vertSet) {
         const v = poly.vertices[vi];
         if (v) {
-          originals.push({ polyIdx: pi, vertIdx: vi, pos: { x: v.x, y: v.y } });
+          originals.push({ polyId, vertIdx: vi, pos: { x: v.x, y: v.y } });
         }
       }
     }
@@ -348,16 +347,15 @@ export class VertexTool implements EditorTool {
     const sel = this.emptySelection();
 
     // Select individual vertices inside the rubber-band
-    for (let pi = 0; pi < store.level.polygons.length; pi++) {
-      if (!store.showGrass && store.level.polygons[pi]!.grass) continue;
-      const verts = store.level.polygons[pi]!.vertices;
-      for (let vi = 0; vi < verts.length; vi++) {
-        const v = verts[vi]!;
+    for (const poly of store.level.polygons) {
+      if (!store.showGrass && poly.grass) continue;
+      for (let vi = 0; vi < poly.vertices.length; vi++) {
+        const v = poly.vertices[vi]!;
         if (v.x >= minX && v.x <= maxX && v.y >= minY && v.y <= maxY) {
-          let vertSet = sel.vertexIndices.get(pi);
+          let vertSet = sel.vertexSelections.get(poly.id);
           if (!vertSet) {
             vertSet = new Set();
-            sel.vertexIndices.set(pi, vertSet);
+            sel.vertexSelections.set(poly.id, vertSet);
           }
           vertSet.add(vi);
         }
@@ -384,15 +382,15 @@ export class VertexTool implements EditorTool {
     else if (key === 'ArrowUp') dy = -step;
     else if (key === 'ArrowDown') dy = step;
 
-    const vertMoves: Array<{ polyIdx: number; vertIdx: number; newPos: Vec2 }> = [];
-    for (const [pi, vertSet] of sel.vertexIndices) {
-      const poly = store.level.polygons[pi];
+    const vertMoves: Array<{ polyId: string; vertIdx: number; newPos: Vec2 }> = [];
+    for (const [polyId, vertSet] of sel.vertexSelections) {
+      const poly = store.level.polygons.find(p => p.id === polyId);
       if (!poly) continue;
       for (const vi of vertSet) {
         const v = poly.vertices[vi];
         if (v) {
           vertMoves.push({
-            polyIdx: pi,
+            polyId,
             vertIdx: vi,
             newPos: { x: v.x + dx, y: v.y + dy },
           });
@@ -410,13 +408,13 @@ export class VertexTool implements EditorTool {
     if (!store.level) return;
     const sel = store.selection;
 
-    if (sel.vertexIndices.size === 0) return;
+    if (sel.vertexSelections.size === 0) return;
 
     // Build the map for batch removal
-    const vertsToRemove = new Map<number, Set<number>>();
-    for (const [pi, vertSet] of sel.vertexIndices) {
+    const vertsToRemove = new Map<string, Set<number>>();
+    for (const [polyId, vertSet] of sel.vertexSelections) {
       if (vertSet.size > 0) {
-        vertsToRemove.set(pi, new Set(vertSet));
+        vertsToRemove.set(polyId, new Set(vertSet));
       }
     }
 
@@ -429,21 +427,21 @@ export class VertexTool implements EditorTool {
 
   private emptySelection(): SelectionState {
     return {
-      polygonIndices: new Set(),
-      vertexIndices: new Map(),
-      objectIndices: new Set(),
-      pictureIndices: new Set(),
+      polygonIds: new Set(),
+      vertexSelections: new Map(),
+      objectIds: new Set(),
+      pictureIds: new Set(),
     };
   }
 
   private cloneSelection(sel: SelectionState): SelectionState {
     return {
-      polygonIndices: new Set(sel.polygonIndices),
-      vertexIndices: new Map(
-        [...sel.vertexIndices].map(([k, v]) => [k, new Set(v)]),
+      polygonIds: new Set(sel.polygonIds),
+      vertexSelections: new Map(
+        [...sel.vertexSelections].map(([k, v]) => [k, new Set(v)]),
       ),
-      objectIndices: new Set(sel.objectIndices),
-      pictureIndices: new Set(sel.pictureIndices),
+      objectIds: new Set(sel.objectIds),
+      pictureIds: new Set(sel.pictureIds),
     };
   }
 }

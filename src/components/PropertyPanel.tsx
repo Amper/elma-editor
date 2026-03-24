@@ -143,7 +143,7 @@ export function PropertyPanel() {
   // Accordion open state — set of open section IDs
   const [openSections, setOpenSections] = useState<Set<string>>(() => new Set(['level']));
 
-  const hasSelection = selection.polygonIndices.size > 0 || selection.objectIndices.size > 0 || selection.pictureIndices.size > 0;
+  const hasSelection = selection.polygonIds.size > 0 || selection.objectIds.size > 0 || selection.pictureIds.size > 0;
 
   // Auto-expand relevant sections when activeTool or selection changes
   useEffect(() => {
@@ -191,14 +191,14 @@ export function PropertyPanel() {
   const setPolygonsGrass = useEditorStore((s) => s.setPolygonsGrass);
 
   // Derive selection-panel data (rendered inline, no early return)
-  const selectedPolyIndices = selection.polygonIndices.size >= 1 ? [...selection.polygonIndices] : null;
-  const selectedPolys = selectedPolyIndices?.map((i) => level.polygons[i]).filter(Boolean) ?? [];
+  const selectedPolyIds = selection.polygonIds.size >= 1 ? [...selection.polygonIds] : null;
+  const selectedPolys = selectedPolyIds ? level.polygons.filter((p) => selection.polygonIds.has(p.id)) : [];
   const hasSelectedPolys = selectedPolys.length > 0;
   const allSameGrassState = hasSelectedPolys && selectedPolys.every((p) => p!.grass === selectedPolys[0]!.grass);
   const commonGrass = allSameGrassState ? selectedPolys[0]!.grass : undefined;
 
-  const selectedObjIndices = selection.objectIndices.size >= 1 ? [...selection.objectIndices] : null;
-  const selectedObjects = selectedObjIndices?.map((i) => level.objects[i]).filter(Boolean) ?? [];
+  const selectedObjIds = selection.objectIds.size >= 1 ? [...selection.objectIds] : null;
+  const selectedObjects = selectedObjIds ? level.objects.filter((o) => selection.objectIds.has(o.id)) : [];
   const hasSelectedObjects = selectedObjects.length > 0;
   const allSameType = hasSelectedObjects && selectedObjects.every((o) => o!.type === selectedObjects[0]!.type);
   const allSameGravity = hasSelectedObjects && selectedObjects.every((o) => o!.gravity === selectedObjects[0]!.gravity);
@@ -210,11 +210,11 @@ export function PropertyPanel() {
   const updatePictures = useEditorStore((s) => s.updatePictures);
 
   // Split selected pictures into regular pictures vs mask/texture pictures
-  const allPicIndices = selection.pictureIndices.size >= 1 ? [...selection.pictureIndices] : [];
-  const selRegularPicIndices = allPicIndices.filter((i) => { const p = level.pictures[i]; return p && !p.texture; });
-  const selMaskPicIndices = allPicIndices.filter((i) => { const p = level.pictures[i]; return p && !!p.texture; });
-  const selRegularPics = selRegularPicIndices.map((i) => level.pictures[i]!);
-  const selMaskPics = selMaskPicIndices.map((i) => level.pictures[i]!);
+  const allSelectedPics = selection.pictureIds.size >= 1 ? level.pictures.filter((p) => selection.pictureIds.has(p.id)) : [];
+  const selRegularPics = allSelectedPics.filter((p) => !p.texture);
+  const selRegularPicIds = selRegularPics.map((p) => p.id);
+  const selMaskPics = allSelectedPics.filter((p) => !!p.texture);
+  const selMaskPicIds = selMaskPics.map((p) => p.id);
 
   // Regular picture common props
   const commonPicName = selRegularPics.length > 0 && selRegularPics.every((p) => p.name === selRegularPics[0]!.name) ? selRegularPics[0]!.name : undefined;
@@ -233,7 +233,7 @@ export function PropertyPanel() {
       {hasSelectedPolys && (
         <>
           <h3 className="section-header section-header--open">
-            {selectedPolys.length === 1 ? `Polygon #${selectedPolyIndices![0]}` : `${selectedPolys.length} Polygons`}
+            {selectedPolys.length === 1 ? `Polygon ${selectedPolyIds![0]!.slice(0, 6)}` : `${selectedPolys.length} Polygons`}
           </h3>
           <div className="accordion-body">
             <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -241,7 +241,7 @@ export function PropertyPanel() {
                 type="checkbox"
                 checked={commonGrass ?? false}
                 ref={(el) => { if (el) el.indeterminate = commonGrass === undefined; }}
-                onChange={(e) => setPolygonsGrass(selectedPolyIndices!, e.target.checked)}
+                onChange={(e) => setPolygonsGrass(selectedPolyIds!, e.target.checked)}
               />
               Grass
             </label>
@@ -257,7 +257,7 @@ export function PropertyPanel() {
       {hasSelectedObjects && (
         <>
           <h3 className="section-header section-header--open">
-            {selectedObjects.length === 1 ? `Object #${selectedObjIndices![0]}` : `${selectedObjects.length} Objects`}
+            {selectedObjects.length === 1 ? `Object ${selectedObjIds![0]!.slice(0, 6)}` : `${selectedObjects.length} Objects`}
           </h3>
           <div className="accordion-body">
             {selectedObjects.length === 1 && (
@@ -270,7 +270,7 @@ export function PropertyPanel() {
               <select
                 value={commonType ?? ''}
                 onChange={(e) =>
-                  updateObjects(selectedObjIndices!, { type: Number(e.target.value) as ObjectType })
+                  updateObjects(selectedObjIds!, { type: Number(e.target.value) as ObjectType })
                 }
                 className="select"
               >
@@ -289,7 +289,7 @@ export function PropertyPanel() {
                 <select
                   value={commonGravity ?? ''}
                   onChange={(e) =>
-                    updateObjects(selectedObjIndices!, { gravity: Number(e.target.value) as Gravity })
+                    updateObjects(selectedObjIds!, { gravity: Number(e.target.value) as Gravity })
                   }
                   className="select"
                 >
@@ -308,7 +308,7 @@ export function PropertyPanel() {
       {selRegularPics.length > 0 && (
         <>
           <h3 className="section-header section-header--open">
-            {selRegularPics.length === 1 ? `Picture #${selRegularPicIndices[0]}` : `${selRegularPics.length} Pictures`}
+            {selRegularPics.length === 1 ? `Picture ${selRegularPicIds[0]!.slice(0, 6)}` : `${selRegularPics.length} Pictures`}
           </h3>
           <div className="accordion-body">
             {selRegularPics.length === 1 && (
@@ -320,7 +320,7 @@ export function PropertyPanel() {
               Name
               <select
                 value={commonPicName ?? ''}
-                onChange={(e) => updatePictures(selRegularPicIndices, { name: e.target.value })}
+                onChange={(e) => updatePictures(selRegularPicIds, { name: e.target.value })}
                 className="select"
               >
                 {commonPicName === undefined && <option value="">Mixed</option>}
@@ -333,7 +333,7 @@ export function PropertyPanel() {
               Clipping
               <select
                 value={commonPicClip ?? ''}
-                onChange={(e) => updatePictures(selRegularPicIndices, { clip: Number(e.target.value) as Clip })}
+                onChange={(e) => updatePictures(selRegularPicIds, { clip: Number(e.target.value) as Clip })}
                 className="select"
               >
                 {commonPicClip === undefined && <option value="">Mixed</option>}
@@ -347,7 +347,7 @@ export function PropertyPanel() {
               <input
                 type="number"
                 value={commonPicDist ?? ''}
-                onChange={(e) => updatePictures(selRegularPicIndices, { distance: Number(e.target.value) })}
+                onChange={(e) => updatePictures(selRegularPicIds, { distance: Number(e.target.value) })}
                 className="input"
                 min={1}
                 max={999}
@@ -359,7 +359,7 @@ export function PropertyPanel() {
       {selMaskPics.length > 0 && (
         <>
           <h3 className="section-header section-header--open">
-            {selMaskPics.length === 1 ? `Mask #${selMaskPicIndices[0]}` : `${selMaskPics.length} Masks`}
+            {selMaskPics.length === 1 ? `Mask ${selMaskPicIds[0]!.slice(0, 6)}` : `${selMaskPics.length} Masks`}
           </h3>
           <div className="accordion-body">
             {selMaskPics.length === 1 && (
@@ -371,7 +371,7 @@ export function PropertyPanel() {
               Texture
               <select
                 value={commonTexture ?? ''}
-                onChange={(e) => updatePictures(selMaskPicIndices, { texture: e.target.value })}
+                onChange={(e) => updatePictures(selMaskPicIds, { texture: e.target.value })}
                 className="select"
               >
                 {commonTexture === undefined && <option value="">Mixed</option>}
@@ -384,7 +384,7 @@ export function PropertyPanel() {
               Mask
               <select
                 value={commonMask ?? ''}
-                onChange={(e) => updatePictures(selMaskPicIndices, { mask: e.target.value })}
+                onChange={(e) => updatePictures(selMaskPicIds, { mask: e.target.value })}
                 className="select"
               >
                 {commonMask === undefined && <option value="">Mixed</option>}
@@ -397,7 +397,7 @@ export function PropertyPanel() {
               Clipping
               <select
                 value={commonMaskClip ?? ''}
-                onChange={(e) => updatePictures(selMaskPicIndices, { clip: Number(e.target.value) as Clip })}
+                onChange={(e) => updatePictures(selMaskPicIds, { clip: Number(e.target.value) as Clip })}
                 className="select"
               >
                 {commonMaskClip === undefined && <option value="">Mixed</option>}
@@ -411,7 +411,7 @@ export function PropertyPanel() {
               <input
                 type="number"
                 value={commonMaskDist ?? ''}
-                onChange={(e) => updatePictures(selMaskPicIndices, { distance: Number(e.target.value) })}
+                onChange={(e) => updatePictures(selMaskPicIds, { distance: Number(e.target.value) })}
                 className="input"
                 min={1}
                 max={999}

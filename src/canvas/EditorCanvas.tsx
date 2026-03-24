@@ -9,6 +9,7 @@ import { ToolId } from '@/types';
 import { undo, redo } from '@/state/selectors';
 import { readLevelFile, downloadLevel } from '@/io/fileIO';
 import { loadEditorLgr } from './lgrCache';
+import { broadcastAwareness } from '@/collab/awareness';
 
 export function EditorCanvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -40,6 +41,7 @@ export function EditorCanvas() {
   const showPictures = useEditorStore((s) => s.showPictures);
   const showTextures = useEditorStore((s) => s.showTextures);
   const showObjects = useEditorStore((s) => s.showObjects);
+  const remoteUsers = useEditorStore((s) => s.remoteUsers);
 
   // Sync tool manager with store's active tool
   useEffect(() => {
@@ -95,6 +97,7 @@ export function EditorCanvas() {
         showPictures,
         showTextures,
         showObjects,
+        remoteUsers: useEditorStore.getState().remoteUsers,
       });
 
       // Draw tool overlay in world space
@@ -316,9 +319,11 @@ export function EditorCanvas() {
         return;
       }
 
-      // Update cursor world position for status bar
+      // Update cursor world position for status bar + collab awareness
       const pe = makePointerEvent(e);
-      useEditorStore.getState().setCursorWorld(pe.worldPos);
+      const curStore = useEditorStore.getState();
+      curStore.setCursorWorld(pe.worldPos);
+      broadcastAwareness(curStore.collabClient, pe.worldPos, curStore.selection, curStore.activeTool);
 
       // Middle-mouse pan
       if (isPanningRef.current) {
@@ -515,29 +520,26 @@ export function EditorCanvas() {
         e.preventDefault();
         const store = useEditorStore.getState();
         if (!store.level) return;
-        const visiblePolyIndices = store.level.polygons
-          .map((p, i) => ({ p, i }))
-          .filter(({ p }) => store.showGrass || !p.grass)
-          .map(({ i }) => i);
+        const visiblePolys = store.level.polygons
+          .filter((p) => store.showGrass || !p.grass);
         const sel = {
-          polygonIndices: new Set(visiblePolyIndices),
-          vertexIndices: new Map(
-            visiblePolyIndices.map((i) => [
-              i,
-              new Set(store.level!.polygons[i]!.vertices.map((_, vi) => vi)),
+          polygonIds: new Set(visiblePolys.map((p) => p.id)),
+          vertexSelections: new Map(
+            visiblePolys.map((p) => [
+              p.id,
+              new Set(p.vertices.map((_, vi) => vi)),
             ]),
           ),
-          objectIndices: store.showObjects
-            ? new Set(store.level.objects.map((_, i) => i))
-            : new Set<number>(),
-          pictureIndices: new Set(
+          objectIds: store.showObjects
+            ? new Set(store.level.objects.map((o) => o.id))
+            : new Set<string>(),
+          pictureIds: new Set(
             store.level.pictures
-              .map((p, i) => ({ p, i }))
-              .filter(({ p }) => {
+              .filter((p) => {
                 const isTexMask = !!(p.texture && p.mask);
                 return isTexMask ? store.showTextures : store.showPictures;
               })
-              .map(({ i }) => i),
+              .map((p) => p.id),
           ),
         };
         store.setSelection(sel);

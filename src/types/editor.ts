@@ -54,12 +54,12 @@ export interface GridConfig {
   visible: boolean;
 }
 
-/** Selection state. */
+/** Selection state — references entities by stable ID, not array index. */
 export interface SelectionState {
-  polygonIndices: Set<number>;
-  vertexIndices: Map<number, Set<number>>;
-  objectIndices: Set<number>;
-  pictureIndices: Set<number>;
+  polygonIds: Set<string>;
+  vertexSelections: Map<string, Set<number>>; // polyId → vertex indices within that polygon
+  objectIds: Set<string>;
+  pictureIds: Set<string>;
 }
 
 /** Topology error descriptor. */

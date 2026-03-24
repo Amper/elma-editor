@@ -4,9 +4,10 @@ import { applyViewportTransform } from './viewport';
 import { renderGroundPolygons, renderGrassEdges } from './renderPolygons';
 import { renderObjects, renderPictures } from './renderObjects';
 import { renderGrid } from './renderGrid';
-import { renderOverlays } from './renderOverlays';
+import { renderOverlays, renderRemoteCursors } from './renderOverlays';
 import { getTheme } from './themeColors';
 import { getEditorLgr } from './lgrCache';
+import type { RemoteUser } from '@/state/editorStore';
 
 export interface RenderContext {
   level: Level | null;
@@ -19,6 +20,7 @@ export interface RenderContext {
   showPictures: boolean;
   showTextures: boolean;
   showObjects: boolean;
+  remoteUsers: Map<string, RemoteUser>;
 }
 
 export function renderFrame(
@@ -94,6 +96,11 @@ export function renderFrame(
     timestamp: performance.now(),
     activeTool: rc.activeTool,
   });
+
+  // Layer 6: Remote cursors & selections
+  if (rc.remoteUsers.size > 0) {
+    renderRemoteCursors(ctx, rc.level, rc.remoteUsers, rc.viewport.zoom, performance.now());
+  }
 
   ctx.restore();
 }

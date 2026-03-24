@@ -16,9 +16,9 @@ import type { LevelData } from '../level/Level';
 const PIXELS_PER_METER = 48;
 
 export class WebGLRenderer {
-  private glCtx: GLContext;
+  readonly glCtx: GLContext;
   private levelRenderer: LevelRenderer;
-  private bikeRenderer: BikeRenderer;
+  readonly bikeRenderer: BikeRenderer;
   private objectRenderer: ObjectRenderer;
   private pictureRenderer: PictureRenderer;
   private hudRenderer: HUDRenderer;
