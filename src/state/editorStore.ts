@@ -17,6 +17,7 @@ import { validateTopology } from '@/utils/topology';
 import { mergePolygons } from '@/utils/mergePolygons';
 import { splitPolygons, selfSplitPolygon } from '@/utils/splitPolygons';
 import { autoGrassPolygon, type AutoGrassConfig } from '@/utils/autoGrass';
+import { pointInPolygon, computeSignedArea } from '@/utils/geometry';
 import { generateId } from '@/utils/generateId';
 
 // ── Test config ──────────────────────────────────────────────────────────────
@@ -879,7 +880,38 @@ export const useEditorStore = create<EditorState>()(
           if (!poly || poly.grass) continue; // Skip grass polygons
 
           const verts = poly.vertices.map((v) => ({ x: v.x, y: v.y }));
-          const strips = autoGrassPolygon(verts, autoGrassConfig);
+
+          // Determine if this polygon creates air or ground (even-odd nesting).
+          // Use a point on the polygon's edge (slightly inward) instead of the
+          // centroid — the centroid can accidentally land inside a child polygon.
+          const isCW = computeSignedArea(verts) > 0;
+          const edgeDx = verts[1]!.x - verts[0]!.x;
+          const edgeDy = verts[1]!.y - verts[0]!.y;
+          const edgeLen = Math.sqrt(edgeDx * edgeDx + edgeDy * edgeDy);
+          let testPoint = {
+            x: (verts[0]!.x + verts[1]!.x) / 2,
+            y: (verts[0]!.y + verts[1]!.y) / 2,
+          };
+          if (edgeLen > 1e-10) {
+            const eps = 0.001;
+            // Inward normal: CW → (-dy, dx), CCW → (dy, -dx)
+            const nx = isCW ? -edgeDy / edgeLen : edgeDy / edgeLen;
+            const ny = isCW ? edgeDx / edgeLen : -edgeDx / edgeLen;
+            testPoint = { x: testPoint.x + nx * eps, y: testPoint.y + ny * eps };
+          }
+          let containingCount = 0;
+          for (let i = 0; i < level.polygons.length; i++) {
+            if (i === idx) continue;
+            const other = level.polygons[i]!;
+            if (other.grass || other.vertices.length < 3) continue;
+            if (pointInPolygon(testPoint, other.vertices)) containingCount++;
+          }
+          const isAir = containingCount % 2 === 0;
+
+          // For island polygons (ground), reverse vertices so the algorithm
+          // correctly identifies top edges as grassable instead of bottom edges.
+          const finalVerts = isCW !== isAir ? [...verts].reverse() : verts;
+          const strips = autoGrassPolygon(finalVerts, autoGrassConfig);
           for (const strip of strips) {
             grassPolygons.push({ grass: true, vertices: strip });
           }

@@ -225,6 +225,19 @@ export function angleBetween(a: Vec2, b: Vec2, center: Vec2): number {
   return a2 - a1;
 }
 
+// ── Signed area ─────────────────────────────────────────────────────────────
+
+/** Signed area of a polygon (shoelace formula). Positive = CW in Y-down coords. */
+export function computeSignedArea(vertices: Vec2[]): number {
+  let area = 0;
+  for (let i = 0; i < vertices.length; i++) {
+    const j = (i + 1) % vertices.length;
+    area += vertices[i]!.x * vertices[j]!.y;
+    area -= vertices[j]!.x * vertices[i]!.y;
+  }
+  return area / 2;
+}
+
 // ── Bounding box ─────────────────────────────────────────────────────────────
 
 /** Compute axis-aligned bounding box of a set of points. */

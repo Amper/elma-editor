@@ -158,6 +158,50 @@ function buildGrassStrip(
     return innerVerts;
   }
 
+  // Taper the endpoints: inset both ends along the edge tangent.
+  // The outer (ground) side is inset more than the inner (air) side,
+  // making the bottom of the grass narrower than the top.
+  const innerInset = thickness * 0.3;
+  const outerInset = thickness * 0.8;
+
+  // Taper at the start of the run
+  {
+    const a = vertices[startEdge % n]!;
+    const b = vertices[(startEdge + 1) % n]!;
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const len = Math.sqrt(dx * dx + dy * dy);
+    if (len > 1e-10) {
+      const tx = dx / len;
+      const ty = dy / len;
+      const maxInset = len * 0.4;
+      const iIn = Math.min(innerInset, maxInset);
+      const oIn = Math.min(outerInset, maxInset);
+      innerVerts[0] = { x: innerVerts[0]!.x + tx * iIn, y: innerVerts[0]!.y + ty * iIn };
+      outerVerts[0] = { x: outerVerts[0]!.x + tx * oIn, y: outerVerts[0]!.y + ty * oIn };
+    }
+  }
+
+  // Taper at the end of the run
+  {
+    const lastEdgeIdx = (startEdge + edgeCount - 1) % n;
+    const a = vertices[lastEdgeIdx]!;
+    const b = vertices[(lastEdgeIdx + 1) % n]!;
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const len = Math.sqrt(dx * dx + dy * dy);
+    if (len > 1e-10) {
+      const tx = dx / len;
+      const ty = dy / len;
+      const maxInset = len * 0.4;
+      const iIn = Math.min(innerInset, maxInset);
+      const oIn = Math.min(outerInset, maxInset);
+      const last = innerVerts.length - 1;
+      innerVerts[last] = { x: innerVerts[last]!.x - tx * iIn, y: innerVerts[last]!.y - ty * iIn };
+      outerVerts[last] = { x: outerVerts[last]!.x - tx * oIn, y: outerVerts[last]!.y - ty * oIn };
+    }
+  }
+
   // Grass polygon = outer vertices forward + inner vertices reversed
   return [...outerVerts, ...innerVerts.reverse()];
 }
