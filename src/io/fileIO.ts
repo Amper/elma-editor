@@ -47,6 +47,7 @@ function shouldPolygonBeGround(polygon: Polygon, allPolygons: Polygon[]): boolea
   let count = 0;
   for (const other of allPolygons) {
     if (other.id === polygon.id) continue;
+    if (other.grass) continue;
     if (pointInPolygon(testPoint.x, testPoint.y, other.vertices)) {
       count++;
     }
