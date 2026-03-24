@@ -10,8 +10,8 @@ export interface AutoGrassConfig {
 }
 
 export const DEFAULT_AUTO_GRASS_CONFIG: AutoGrassConfig = {
-  thickness: 0.8,
-  maxAngle: 60,
+  thickness: 0.5,
+  maxAngle: 40,
 };
 
 // ── Algorithm ────────────────────────────────────────────────────────────────
