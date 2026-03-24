@@ -1,0 +1,70 @@
+:root {
+  /* ── Canvas ── */
+  --color-sky: rgb(234, 234, 228);
+  --color-ground: rgb(33, 53, 71);
+  --color-ground-stroke: #5a4d3a;
+  --color-grass: #4a9e4a;
+  --color-grass-fill: rgba(74, 158, 74, 0.15);
+  --color-canvas-bg: #1a1a2e;
+
+  /* ── Objects (softer palette) ── */
+  --color-obj-exit: #d0d000;
+  --color-obj-apple: #e02020;
+  --color-obj-killer: #505050;
+  --color-obj-start: #5090d0;
+
+  /* ── Grid ── */
+  --color-grid-dot: rgba(100, 120, 140, 0.1);
+  --color-grid-major: rgba(100, 120, 140, 0.2);
+
+  /* ── Selection / Errors ── */
+  --color-selection: #f0962a;
+  --color-selection-fill: rgba(240, 150, 42, 0.08);
+  --color-error: #ff5555;
+  --color-error-glow: rgba(255, 85, 85, 0.4);
+
+  /* ── Tool Overlays ── */
+  --color-tool-primary: #4488FF;
+  --color-tool-draw-ground: #FF6600;
+  --color-tool-draw-grass: #00CC00;
+  --color-tool-vertex-hover: #FFAA00;
+  --color-tool-vertex-active: #FF8800;
+  --color-tool-import: #44C878;
+  --color-handle: #FFFFFF;
+
+  /* ── UI Chrome ── */
+  --color-bg-primary: #1e1e1e;
+  --color-bg-secondary: rgb(34, 34, 51);
+  --color-bg-tertiary: #2d2d2d;
+  --color-bg-hover: #3a3a3a;
+  --color-bg-active: #264f78;
+  --color-bg-input: #333;
+  --color-border: #3e3e3e;
+  --color-border-focus: #5a8fbf;
+  --color-text-primary: #e0e0e0;
+  --color-text-secondary: #999;
+  --color-accent: #4a9ec9;
+  --color-status-bg: #264f78;
+
+  /* ── Spacing ── */
+  --space-xs: 2px;
+  --space-sm: 4px;
+  --space-md: 8px;
+  --space-lg: 12px;
+  --space-xl: 16px;
+
+  /* ── Transitions ── */
+  --transition-fast: 120ms ease;
+  --transition-normal: 200ms ease;
+
+  /* ── Radii ── */
+  --radius-sm: 3px;
+  --radius-md: 5px;
+  --radius-lg: 8px;
+
+  /* ── Responsive sizes ── */
+  --toolbar-size: 64px;
+  --menubar-height: 36px;
+  --statusbar-height: 28px;
+  --touch-target-min: 44px;
+}
