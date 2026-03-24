@@ -338,7 +338,7 @@ export const useEditorStore = create<EditorState>()(
       imageImportPolygons: null,
       clipboard: null,
       drawPolygonGrass: false,
-      autoGrassConfig: { thickness: 0.8, maxAngle: 60 },
+      autoGrassConfig: { thickness: 0.5, maxAngle: 40 },
       isTesting: false,
       testConfig: { ...DEFAULT_TEST_CONFIG },
       showValidationPanel: false,
