@@ -8,7 +8,8 @@ import {
   PipeIcon,
   PolygonIcon,
   SelectionIcon,
-  ShapesIcon
+  ShapesIcon,
+  TextTIcon
 } from "@phosphor-icons/react";
 
 const TOOLS: Array<{ id: ToolId; label: string; shortcut: string; desc: string; icon?: ReactNode }> = [
@@ -22,6 +23,7 @@ const TOOLS: Array<{ id: ToolId; label: string; shortcut: string; desc: string; 
   { id: ToolId.Pipe, label: 'Pipe', shortcut: 'P', desc: 'Draw pipes along a spine path', icon: <PipeIcon size={24} /> },
   { id: ToolId.Pan, label: 'Move', shortcut: 'H', desc: 'Pan the canvas view', icon: <ArrowsOutCardinalIcon size={24} /> },
   { id: ToolId.ImageImport, label: 'Image', shortcut: 'I', desc: 'Import image contours as polygons', icon: <ImageIcon size={24} /> },
+  { id: ToolId.Text, label: 'Text', shortcut: 'X', desc: 'Convert text to polygons', icon: <TextTIcon size={24} /> },
 ];
 
 export function Toolbar() {

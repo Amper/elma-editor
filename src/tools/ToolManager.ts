@@ -11,6 +11,7 @@ import { ShapeTool } from './ShapeTool';
 import { ImageImportTool } from './ImageImportTool';
 import { DrawPictureTool } from './DrawPictureTool';
 import { DrawMaskTool } from './DrawMaskTool';
+import { TextTool } from './TextTool';
 
 export class ToolManager {
   private tools: Map<ToolId, EditorTool>;
@@ -28,6 +29,7 @@ export class ToolManager {
       [ToolId.DrawPicture, new DrawPictureTool(getStore)],
       [ToolId.ImageImport, new ImageImportTool(getStore)],
       [ToolId.DrawMask, new DrawMaskTool(getStore)],
+      [ToolId.Text, new TextTool(getStore)],
     ]);
   }
 

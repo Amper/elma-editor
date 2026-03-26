@@ -502,6 +502,7 @@ export function EditorCanvas() {
           q: ToolId.DrawPicture,
           m: ToolId.DrawMask,
           i: ToolId.ImageImport,
+          x: ToolId.Text,
         };
         const tool = toolMap[e.key.toLowerCase()];
         if (tool) {

@@ -161,6 +161,18 @@ export interface EditorState {
   };
   /** Traced polygons waiting to be placed (centered at origin). */
   imageImportPolygons: Vec2[][] | null;
+  /** Text tool configuration. */
+  textConfig: {
+    text: string;
+    fontFamily: string;
+    fontSize: number;
+    bold: boolean;
+    italic: boolean;
+    simplifyTolerance: number;
+    useGoogleFonts: boolean;
+  };
+  /** Text tool polygons waiting to be placed (centered at origin). */
+  textPolygons: Vec2[][] | null;
   /** Clipboard for copy/cut/paste. */
   clipboard: {
     polygons: Array<{ grass: boolean; vertices: Vec2[] }>;
@@ -225,6 +237,10 @@ export interface EditorState {
   // ── Image import config ──
   setImageImportConfig: (config: Partial<EditorState['imageImportConfig']>) => void;
   setImageImportPolygons: (polygons: Vec2[][] | null) => void;
+
+  // ── Text config ──
+  setTextConfig: (config: Partial<EditorState['textConfig']>) => void;
+  setTextPolygons: (polygons: Vec2[][] | null) => void;
 
   // ── Draw polygon config ──
   setDrawPolygonGrass: (grass: boolean) => void;
@@ -336,6 +352,16 @@ export const useEditorStore = create<EditorState>()(
         invert: false,
       },
       imageImportPolygons: null,
+      textConfig: {
+        text: '',
+        fontFamily: 'Arial',
+        fontSize: 3,
+        bold: false,
+        italic: false,
+        simplifyTolerance: 1.5,
+        useGoogleFonts: false,
+      },
+      textPolygons: null,
       clipboard: null,
       drawPolygonGrass: false,
       autoGrassConfig: { thickness: 0.5, maxAngle: 40 },
@@ -427,6 +453,13 @@ export const useEditorStore = create<EditorState>()(
         set((s) => ({ imageImportConfig: { ...s.imageImportConfig, ...config } })),
       setImageImportPolygons: (polygons) =>
         set({ imageImportPolygons: polygons }),
+
+      // ── Text config ──
+
+      setTextConfig: (config) =>
+        set((s) => ({ textConfig: { ...s.textConfig, ...config } })),
+      setTextPolygons: (polygons) =>
+        set({ textPolygons: polygons }),
 
       // ── Draw polygon config ──
 

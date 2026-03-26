@@ -13,6 +13,7 @@ export enum ToolId {
   Shape = 'shape',
   ImageImport = 'image-import',
   DrawMask = 'draw-mask',
+  Text = 'text',
 }
 
 /** What kind of object will be placed by the DrawObject tool. */

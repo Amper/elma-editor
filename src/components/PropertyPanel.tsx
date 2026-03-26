@@ -1,9 +1,10 @@
-import { useState, useEffect, useCallback, type ReactNode } from 'react';
+import { useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
 import { useEditorStore } from '@/state/editorStore';
 import { ObjectType, Gravity, Clip } from 'elmajs';
 import { ToolId } from '@/types';
 import { getEditorLgr } from '@/canvas/lgrCache';
 import { traceImage } from '@/utils/imageTrace';
+import { textToPolygons, loadGoogleFont, loadGoogleFontPreview, SYSTEM_FONTS, GOOGLE_FONTS } from '@/utils/textTrace';
 import type { AutoGrassConfig } from '@/utils/autoGrass';
 
 /** Display a keyboard code as a readable label. */
@@ -86,6 +87,7 @@ const TOOL_SECTIONS_MAP: Partial<Record<ToolId, string[]>> = {
   [ToolId.Pipe]: ['pipe'],
   [ToolId.Shape]: ['shape'],
   [ToolId.ImageImport]: ['imageImport'],
+  [ToolId.Text]: ['text'],
   [ToolId.DrawObject]: ['objectPlacement'],
   [ToolId.DrawPicture]: ['picturePlacement'],
   [ToolId.DrawMask]: ['maskPlacement'],
@@ -94,7 +96,266 @@ const TOOL_SECTIONS_MAP: Partial<Record<ToolId, string[]>> = {
 };
 
 /* Section IDs that are tool-specific (conditionally rendered) */
-const TOOL_ONLY_SECTIONS = new Set(['pipe', 'shape', 'imageImport', 'polygon', 'maskPlacement', 'objectPlacement']);
+const TOOL_ONLY_SECTIONS = new Set(['pipe', 'shape', 'imageImport', 'text', 'polygon', 'maskPlacement', 'objectPlacement']);
+
+/* ── Font picker with search + live preview ── */
+
+interface FontEntry { name: string; source: 'system' | 'google' }
+
+const ALL_FONTS: FontEntry[] = [
+  ...SYSTEM_FONTS.map((name): FontEntry => ({ name, source: 'system' })),
+  ...GOOGLE_FONTS.map((name): FontEntry => ({ name, source: 'google' })),
+];
+
+function FontPicker({ value, onChange }: { value: string; onChange: (font: string, isGoogle: boolean) => void }) {
+  const [query, setQuery] = useState(value);
+  const [open, setOpen] = useState(false);
+  const [activeIdx, setActiveIdx] = useState(-1);
+  const listRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const filtered = ALL_FONTS.filter((f) =>
+    f.name.toLowerCase().includes(query.toLowerCase()),
+  ).slice(0, 20);
+
+  // Load Google Font previews for visible items
+  useEffect(() => {
+    if (!open) return;
+    for (const f of filtered) {
+      if (f.source === 'google') loadGoogleFontPreview(f.name);
+    }
+  }, [open, filtered]);
+
+  // Keep query in sync if parent changes value
+  useEffect(() => { setQuery(value); }, [value]);
+
+  const select = useCallback((font: FontEntry) => {
+    setQuery(font.name);
+    setOpen(false);
+    onChange(font.name, font.source === 'google');
+  }, [onChange]);
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (!open) {
+      if (e.key === 'ArrowDown' || e.key === 'Enter') { setOpen(true); setActiveIdx(0); e.preventDefault(); }
+      return;
+    }
+    if (e.key === 'ArrowDown') { setActiveIdx((i) => Math.min(i + 1, filtered.length - 1)); e.preventDefault(); }
+    else if (e.key === 'ArrowUp') { setActiveIdx((i) => Math.max(i - 1, 0)); e.preventDefault(); }
+    else if (e.key === 'Enter' && activeIdx >= 0 && filtered[activeIdx]) { select(filtered[activeIdx]); e.preventDefault(); }
+    else if (e.key === 'Escape') { setOpen(false); e.preventDefault(); }
+  };
+
+  // Scroll active item into view
+  useEffect(() => {
+    if (!open || activeIdx < 0 || !listRef.current) return;
+    const el = listRef.current.children[activeIdx] as HTMLElement | undefined;
+    el?.scrollIntoView({ block: 'nearest' });
+  }, [activeIdx, open]);
+
+  return (
+    <div style={{ position: 'relative' }}>
+      <input
+        ref={inputRef}
+        type="text"
+        value={query}
+        onChange={(e) => { setQuery(e.target.value); setOpen(true); setActiveIdx(0); }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        onKeyDown={handleKeyDown}
+        placeholder="Search fonts..."
+        className="input"
+      />
+      {open && filtered.length > 0 && (
+        <div
+          ref={listRef}
+          style={{
+            position: 'absolute',
+            left: 0,
+            right: 0,
+            top: '100%',
+            marginTop: 2,
+            maxHeight: 220,
+            overflowY: 'auto',
+            background: 'var(--color-bg-input)',
+            border: '1px solid var(--color-border)',
+            borderRadius: 'var(--radius-sm)',
+            zIndex: 100,
+          }}
+        >
+          {filtered.map((f, i) => (
+            <div
+              key={`${f.source}-${f.name}`}
+              onMouseDown={(e) => { e.preventDefault(); select(f); }}
+              onMouseEnter={() => setActiveIdx(i)}
+              style={{
+                padding: '5px 8px',
+                cursor: 'pointer',
+                fontSize: 13,
+                fontFamily: `"${f.name}", sans-serif`,
+                background: i === activeIdx ? 'var(--color-bg-hover)' : 'transparent',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+              }}
+            >
+              <span>{f.name}</span>
+              <span style={{ fontSize: 9, color: 'var(--color-text-secondary)', fontFamily: 'inherit', marginLeft: 8, flexShrink: 0 }}>
+                {f.source === 'google' ? 'Google' : 'System'}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── Text tool section (extracted for hooks) ── */
+
+type TextConfigType = {
+  text: string; fontFamily: string; fontSize: number;
+  bold: boolean; italic: boolean; simplifyTolerance: number; useGoogleFonts: boolean;
+};
+
+function TextSection({
+  openSections,
+  toggleSection,
+  textConfig,
+  setTextConfig,
+  textPolygons,
+  setTextPolygons,
+}: {
+  openSections: Set<string>;
+  toggleSection: (id: string) => void;
+  textConfig: TextConfigType;
+  setTextConfig: (config: Partial<TextConfigType>) => void;
+  textPolygons: import('@/types').Vec2[][] | null;
+  setTextPolygons: (polygons: import('@/types').Vec2[][] | null) => void;
+}) {
+  const [status, setStatus] = useState<string>('');
+
+  // Debounced auto-preview
+  useEffect(() => {
+    if (!textConfig.text.trim()) {
+      setTextPolygons(null);
+      setStatus('');
+      return;
+    }
+
+    setStatus(textConfig.useGoogleFonts ? 'Loading font...' : 'Generating...');
+    const timer = setTimeout(async () => {
+      try {
+        if (textConfig.useGoogleFonts) {
+          const ok = await loadGoogleFont(textConfig.fontFamily);
+          if (!ok) {
+            setStatus('Font not found on Google Fonts');
+            return;
+          }
+        }
+        const result = textToPolygons(textConfig);
+        setTextPolygons(result.length > 0 ? result : null);
+        if (result.length > 0) {
+          const verts = result.reduce((s, p) => s + p.length, 0);
+          setStatus(`${result.length} polygons, ${verts} vertices`);
+        } else {
+          setStatus('No contours traced');
+        }
+      } catch {
+        setStatus('Generation failed');
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [textConfig.text, textConfig.fontFamily, textConfig.fontSize, textConfig.bold, textConfig.italic, textConfig.simplifyTolerance, textConfig.useGoogleFonts, setTextPolygons]);
+
+  const handleFontChange = useCallback((font: string, isGoogle: boolean) => {
+    setTextConfig({ fontFamily: font, useGoogleFonts: isGoogle });
+  }, [setTextConfig]);
+
+  return (
+    <Section id="text" title="Text" open={openSections.has('text')} onToggle={toggleSection}>
+      <label className="form-label">
+        Text
+        <input
+          type="text"
+          value={textConfig.text}
+          onChange={(e) => setTextConfig({ text: e.target.value })}
+          placeholder="Enter text..."
+          className="input"
+        />
+      </label>
+      <label className="form-label">
+        Font
+      </label>
+      <FontPicker value={textConfig.fontFamily} onChange={handleFontChange} />
+      <label className="form-label" style={{ marginTop: 8 }}>
+        Size (world units)
+        <input
+          type="number"
+          value={textConfig.fontSize}
+          min={0.5}
+          max={120}
+          step={0.5}
+          onChange={(e) => {
+            const val = parseFloat(e.target.value);
+            if (val > 0 && isFinite(val)) {
+              setTextConfig({ fontSize: val });
+            }
+          }}
+          className="input"
+        />
+      </label>
+      <label
+        className="form-label"
+        style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+      >
+        <input
+          type="checkbox"
+          checked={textConfig.bold}
+          onChange={(e) => setTextConfig({ bold: e.target.checked })}
+        />
+        Bold
+      </label>
+      <label
+        className="form-label"
+        style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+      >
+        <input
+          type="checkbox"
+          checked={textConfig.italic}
+          onChange={(e) => setTextConfig({ italic: e.target.checked })}
+        />
+        Italic
+      </label>
+      <label className="form-label">
+        Simplification
+        <input
+          type="number"
+          value={textConfig.simplifyTolerance}
+          min={0.1}
+          max={10}
+          step={0.1}
+          onChange={(e) => {
+            const val = parseFloat(e.target.value);
+            if (val > 0 && isFinite(val)) {
+              setTextConfig({ simplifyTolerance: val });
+            }
+          }}
+          className="input"
+        />
+      </label>
+      <div className="detail-text" style={{ marginTop: 8 }}>
+        {status || 'Type text to generate preview.'}
+        {textPolygons && (
+          <>
+            <br />
+            Click on canvas to place. Right-click or Esc to clear.
+          </>
+        )}
+      </div>
+    </Section>
+  );
+}
 
 export function PropertyPanel() {
   const level = useEditorStore((s) => s.level);
@@ -125,6 +386,10 @@ export function PropertyPanel() {
   const setImageImportConfig = useEditorStore((s) => s.setImageImportConfig);
   const imageImportPolygons = useEditorStore((s) => s.imageImportPolygons);
   const setImageImportPolygons = useEditorStore((s) => s.setImageImportPolygons);
+  const textConfig = useEditorStore((s) => s.textConfig);
+  const setTextConfig = useEditorStore((s) => s.setTextConfig);
+  const textPolygons = useEditorStore((s) => s.textPolygons);
+  const setTextPolygons = useEditorStore((s) => s.setTextPolygons);
   const drawPolygonGrass = useEditorStore((s) => s.drawPolygonGrass);
   const setDrawPolygonGrass = useEditorStore((s) => s.setDrawPolygonGrass);
   const autoGrassConfig = useEditorStore((s) => s.autoGrassConfig);
@@ -792,6 +1057,17 @@ export function PropertyPanel() {
             </div>
           )}
         </Section>
+      )}
+
+      {activeTool === ToolId.Text && (
+        <TextSection
+          openSections={openSections}
+          toggleSection={toggleSection}
+          textConfig={textConfig}
+          setTextConfig={setTextConfig}
+          textPolygons={textPolygons}
+          setTextPolygons={setTextPolygons}
+        />
       )}
 
       {hasSelectedPolys && (
