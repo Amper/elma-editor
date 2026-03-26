@@ -52,10 +52,18 @@ export async function loadGoogleFont(family: string): Promise<boolean> {
   const link = document.createElement('link');
   link.rel = 'stylesheet';
   link.href = url;
-  document.head.appendChild(link);
 
+  // Wait for the stylesheet to actually load before checking font availability
   try {
-    await document.fonts.load(`16px "${family}"`);
+    await new Promise<void>((resolve, reject) => {
+      link.onload = () => resolve();
+      link.onerror = () => reject(new Error('Stylesheet load failed'));
+      document.head.appendChild(link);
+    });
+
+    // Wait for all pending font-face loads to finish
+    await document.fonts.ready;
+
     loadedFonts.add(family);
     return true;
   } catch {

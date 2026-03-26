@@ -5,6 +5,7 @@ import { ToolId } from '@/types';
 import { getEditorLgr } from '@/canvas/lgrCache';
 import { traceImage } from '@/utils/imageTrace';
 import { textToPolygons, loadGoogleFont, loadGoogleFontPreview, SYSTEM_FONTS, GOOGLE_FONTS } from '@/utils/textTrace';
+import { CaretUpDown } from '@phosphor-icons/react';
 import type { AutoGrassConfig } from '@/utils/autoGrass';
 
 /** Display a keyboard code as a readable label. */
@@ -108,42 +109,59 @@ const ALL_FONTS: FontEntry[] = [
 ];
 
 function FontPicker({ value, onChange }: { value: string; onChange: (font: string, isGoogle: boolean) => void }) {
-  const [query, setQuery] = useState(value);
+  const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
   const [activeIdx, setActiveIdx] = useState(-1);
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const filtered = ALL_FONTS.filter((f) =>
-    f.name.toLowerCase().includes(query.toLowerCase()),
-  ).slice(0, 20);
+  const filtered = isSearching
+    ? ALL_FONTS.filter((f) => f.name.toLowerCase().includes(query.toLowerCase())).slice(0, 20)
+    : ALL_FONTS;
 
   // Load Google Font previews for visible items
   useEffect(() => {
     if (!open) return;
-    for (const f of filtered) {
+    const items = isSearching ? filtered : filtered.slice(Math.max(0, activeIdx - 5), activeIdx + 15);
+    for (const f of items) {
       if (f.source === 'google') loadGoogleFontPreview(f.name);
     }
-  }, [open, filtered]);
-
-  // Keep query in sync if parent changes value
-  useEffect(() => { setQuery(value); }, [value]);
+  }, [open, filtered, isSearching, activeIdx]);
 
   const select = useCallback((font: FontEntry) => {
-    setQuery(font.name);
     setOpen(false);
+    setIsSearching(false);
+    setQuery('');
     onChange(font.name, font.source === 'google');
   }, [onChange]);
 
+  const toggleOpen = useCallback(() => {
+    if (open) {
+      setOpen(false);
+      setIsSearching(false);
+      setQuery('');
+    } else {
+      setOpen(true);
+      setIsSearching(false);
+      setQuery('');
+      const idx = ALL_FONTS.findIndex((f) => f.name === value);
+      setActiveIdx(idx >= 0 ? idx : 0);
+    }
+  }, [open, value]);
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (!open) {
-      if (e.key === 'ArrowDown' || e.key === 'Enter') { setOpen(true); setActiveIdx(0); e.preventDefault(); }
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        toggleOpen();
+        e.preventDefault();
+      }
       return;
     }
     if (e.key === 'ArrowDown') { setActiveIdx((i) => Math.min(i + 1, filtered.length - 1)); e.preventDefault(); }
     else if (e.key === 'ArrowUp') { setActiveIdx((i) => Math.max(i - 1, 0)); e.preventDefault(); }
     else if (e.key === 'Enter' && activeIdx >= 0 && filtered[activeIdx]) { select(filtered[activeIdx]); e.preventDefault(); }
-    else if (e.key === 'Escape') { setOpen(false); e.preventDefault(); }
+    else if (e.key === 'Escape') { setOpen(false); setIsSearching(false); setQuery(''); e.preventDefault(); }
   };
 
   // Scroll active item into view
@@ -153,19 +171,58 @@ function FontPicker({ value, onChange }: { value: string; onChange: (font: strin
     el?.scrollIntoView({ block: 'nearest' });
   }, [activeIdx, open]);
 
+  const displayValue = isSearching ? query : value;
+
   return (
     <div style={{ position: 'relative' }}>
-      <input
-        ref={inputRef}
-        type="text"
-        value={query}
-        onChange={(e) => { setQuery(e.target.value); setOpen(true); setActiveIdx(0); }}
-        onFocus={() => setOpen(true)}
-        onBlur={() => setTimeout(() => setOpen(false), 150)}
-        onKeyDown={handleKeyDown}
-        placeholder="Search fonts..."
-        className="input"
-      />
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          border: '1px solid var(--color-border)',
+          borderRadius: 'var(--radius-sm)',
+          background: 'var(--color-bg-input)',
+          overflow: 'hidden',
+        }}
+      >
+        <input
+          ref={inputRef}
+          type="text"
+          value={displayValue}
+          onChange={(e) => { setQuery(e.target.value); setIsSearching(true); setOpen(true); setActiveIdx(0); }}
+          onFocus={() => { if (!open) toggleOpen(); }}
+          onBlur={() => setTimeout(() => { setOpen(false); setIsSearching(false); setQuery(''); }, 150)}
+          onKeyDown={handleKeyDown}
+          placeholder="Search fonts..."
+          style={{
+            flex: 1,
+            border: 'none',
+            background: 'transparent',
+            color: 'var(--color-text-primary)',
+            padding: 'var(--space-sm) 6px',
+            fontSize: 12,
+            fontFamily: `"${value}", sans-serif`,
+            outline: 'none',
+            minWidth: 0,
+          }}
+        />
+        <button
+          type="button"
+          onMouseDown={(e) => { e.preventDefault(); toggleOpen(); inputRef.current?.focus(); }}
+          style={{
+            background: 'transparent',
+            border: 'none',
+            color: 'var(--color-text-secondary)',
+            padding: '2px 4px',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            flexShrink: 0,
+          }}
+        >
+          <CaretUpDown size={14} />
+        </button>
+      </div>
       {open && filtered.length > 0 && (
         <div
           ref={listRef}
@@ -175,7 +232,7 @@ function FontPicker({ value, onChange }: { value: string; onChange: (font: strin
             right: 0,
             top: '100%',
             marginTop: 2,
-            maxHeight: 220,
+            maxHeight: 260,
             overflowY: 'auto',
             background: 'var(--color-bg-input)',
             border: '1px solid var(--color-border)',
@@ -183,28 +240,35 @@ function FontPicker({ value, onChange }: { value: string; onChange: (font: strin
             zIndex: 100,
           }}
         >
-          {filtered.map((f, i) => (
-            <div
-              key={`${f.source}-${f.name}`}
-              onMouseDown={(e) => { e.preventDefault(); select(f); }}
-              onMouseEnter={() => setActiveIdx(i)}
-              style={{
-                padding: '5px 8px',
-                cursor: 'pointer',
-                fontSize: 13,
-                fontFamily: `"${f.name}", sans-serif`,
-                background: i === activeIdx ? 'var(--color-bg-hover)' : 'transparent',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-              }}
-            >
-              <span>{f.name}</span>
-              <span style={{ fontSize: 9, color: 'var(--color-text-secondary)', fontFamily: 'inherit', marginLeft: 8, flexShrink: 0 }}>
-                {f.source === 'google' ? 'Google' : 'System'}
-              </span>
-            </div>
-          ))}
+          {filtered.map((f, i) => {
+            const selected = f.name === value;
+            return (
+              <div
+                key={`${f.source}-${f.name}`}
+                onMouseDown={(e) => { e.preventDefault(); select(f); }}
+                onMouseEnter={() => setActiveIdx(i)}
+                style={{
+                  padding: '5px 8px',
+                  cursor: 'pointer',
+                  fontSize: 13,
+                  fontFamily: `"${f.name}", sans-serif`,
+                  background: i === activeIdx
+                    ? 'var(--color-bg-hover)'
+                    : selected
+                      ? 'var(--color-bg-active)'
+                      : 'transparent',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                }}
+              >
+                <span style={{ fontWeight: selected ? 600 : 400 }}>{f.name}</span>
+                <span style={{ fontSize: 9, color: 'var(--color-text-secondary)', fontFamily: 'inherit', marginLeft: 8, flexShrink: 0 }}>
+                  {f.source === 'google' ? 'Google' : 'System'}
+                </span>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
