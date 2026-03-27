@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback, useRef, type ReactNode } from 'react'
 import { useEditorStore } from '@/state/editorStore';
 import { ObjectType, Gravity, Clip } from 'elmajs';
 import { ToolId } from '@/types';
-import { getEditorLgr } from '@/canvas/lgrCache';
+import { getEditorLgr, switchLgr } from '@/canvas/lgrCache';
+import { fetchLgrList, type LgrInfo } from '@/api/lgrApi';
 import { traceImage } from '@/utils/imageTrace';
 import { textToPolygons, loadGoogleFont, loadGoogleFontPreview, SYSTEM_FONTS, GOOGLE_FONTS } from '@/utils/textTrace';
 import { CaretUpDown } from '@phosphor-icons/react';
@@ -468,6 +469,30 @@ export function PropertyPanel() {
   const setShowObjects = useEditorStore((s) => s.setShowObjects);
   const testConfig = useEditorStore((s) => s.testConfig);
   const setTestConfig = useEditorStore((s) => s.setTestConfig);
+  const selectedLgr = useEditorStore((s) => s.selectedLgr);
+  const setSelectedLgr = useEditorStore((s) => s.setSelectedLgr);
+  const lgrLoading = useEditorStore((s) => s.lgrLoading);
+  const setLgrLoading = useEditorStore((s) => s.setLgrLoading);
+
+  const [lgrList, setLgrList] = useState<LgrInfo[]>([]);
+  useEffect(() => { fetchLgrList().then(setLgrList); }, []);
+
+  const handleLgrChange = useCallback(async (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const name = e.target.value;
+    setSelectedLgr(name);
+    setLgrLoading(true);
+    try {
+      if (name === 'Default') {
+        await switchLgr('/lgr/Default.lgr');
+      } else {
+        await switchLgr(`https://api.elma.online/api/lgr/get/${name}`);
+      }
+    } catch (err) {
+      console.warn('Failed to load LGR:', err);
+    } finally {
+      setLgrLoading(false);
+    }
+  }, [lgrList, setSelectedLgr, setLgrLoading]);
 
   // Accordion open state — set of open section IDs
   const [openSections, setOpenSections] = useState<Set<string>>(() => new Set(['level']));
@@ -1213,6 +1238,23 @@ export function PropertyPanel() {
       </Section>
 
       <Section id="editorProps" title="Editor Properties" open={openSections.has('editorProps')} onToggle={toggleSection}>
+        <label className="form-label">
+          LGR
+          <select
+            value={selectedLgr}
+            onChange={handleLgrChange}
+            className="select"
+            disabled={lgrLoading}
+          >
+            <option value="Default">Default</option>
+            {lgrList.map((lgr) => (
+              <option key={lgr.LGRIndex} value={lgr.LGRName}>{lgr.LGRName}</option>
+            ))}
+          </select>
+        </label>
+        {lgrLoading && (
+          <div className="detail-text">Loading LGR...</div>
+        )}
         <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <input type="checkbox" checked={showGrass} onChange={() => setShowGrass(!showGrass)} />
           Show grass

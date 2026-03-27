@@ -8,7 +8,7 @@ import type { Vec2 } from '@/types';
 import { ToolId } from '@/types';
 import { undo, redo } from '@/state/selectors';
 import { readLevelFile, downloadLevel } from '@/io/fileIO';
-import { loadEditorLgr } from './lgrCache';
+import { loadEditorLgr, switchLgr } from './lgrCache';
 
 export function EditorCanvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -47,7 +47,14 @@ export function EditorCanvas() {
   }, [activeTool]);
 
   // Load LGR textures for editor rendering (fire-and-forget)
-  useEffect(() => { loadEditorLgr(); }, []);
+  useEffect(() => {
+    const selectedLgr = useEditorStore.getState().selectedLgr;
+    if (selectedLgr && selectedLgr !== 'Default') {
+      switchLgr(`https://api.elma.online/api/lgr/get/${selectedLgr}`).catch(() => {});
+    } else {
+      loadEditorLgr();
+    }
+  }, []);
 
   // Resize canvas to fill container with devicePixelRatio
   useEffect(() => {

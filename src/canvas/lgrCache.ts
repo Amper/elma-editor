@@ -31,7 +31,7 @@ let lgrDataPromise: Promise<LgrData> | null = null;
 
 /**
  * Fetch and parse the LGR file, returning cached LgrData.
- * The promise is created on first call and reused thereafter.
+ * Used by GameOverlay for test mode.
  */
 export function loadLgrData(): Promise<LgrData> {
   if (!lgrDataPromise) {
@@ -119,6 +119,27 @@ async function buildAssets(lgr: LgrData): Promise<LgrEditorAssets> {
   }
 
   return { texturePatterns, sprites, bikeSprite, pictures, masks };
+}
+
+/**
+ * Switch to a different LGR by URL.
+ * Invalidates the cache, downloads, parses, and rebuilds all editor assets.
+ */
+export async function switchLgr(url: string): Promise<void> {
+  cachedAssets = null;
+  lgrDataPromise = null;
+  loading = true;
+
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`LGR fetch failed: ${res.status}`);
+    const buf = await res.arrayBuffer();
+    const lgr = parseLgrFile(buf);
+    lgrDataPromise = Promise.resolve(lgr);
+    cachedAssets = await buildAssets(lgr);
+  } finally {
+    loading = false;
+  }
 }
 
 /** Fire-and-forget LGR loader. Call once at editor mount. */

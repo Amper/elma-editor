@@ -190,6 +190,10 @@ export interface EditorState {
   showPictures: boolean;
   showTextures: boolean;
   showObjects: boolean;
+  /** Name of the currently selected LGR ("Default" for the local file). */
+  selectedLgr: string;
+  /** Whether an LGR is currently being downloaded/parsed. */
+  lgrLoading: boolean;
   /** Test mode configuration. */
   testConfig: TestConfig;
   /** Show the validation error panel. */
@@ -295,6 +299,8 @@ export interface EditorState {
   setShowPictures: (show: boolean) => void;
   setShowTextures: (show: boolean) => void;
   setShowObjects: (show: boolean) => void;
+  setSelectedLgr: (name: string) => void;
+  setLgrLoading: (loading: boolean) => void;
 
   // ── Test config ──
   setTestConfig: (config: Partial<TestConfig>) => void;
@@ -373,6 +379,8 @@ export const useEditorStore = create<EditorState>()(
       showPictures: true,
       showTextures: true,
       showObjects: true,
+      selectedLgr: 'Default',
+      lgrLoading: false,
 
       // ── Level I/O ──
 
@@ -974,6 +982,8 @@ export const useEditorStore = create<EditorState>()(
       setShowPictures: (show) => set({ showPictures: show }),
       setShowTextures: (show) => set({ showTextures: show }),
       setShowObjects: (show) => set({ showObjects: show }),
+      setSelectedLgr: (name) => set({ selectedLgr: name }),
+      setLgrLoading: (loading) => set({ lgrLoading: loading }),
 
       // ── Test config ──
 
@@ -1101,6 +1111,7 @@ useEditorStore.subscribe((state) => {
     showPictures: state.showPictures,
     showTextures: state.showTextures,
     showObjects: state.showObjects,
+    selectedLgr: state.selectedLgr,
   });
   const testConfig = JSON.stringify(state.testConfig);
 
@@ -1131,6 +1142,7 @@ function restoreFromLocalStorage(): void {
       patch.showPictures = props.showPictures ?? true;
       patch.showTextures = props.showTextures ?? true;
       patch.showObjects = props.showObjects ?? true;
+      if (props.selectedLgr) patch.selectedLgr = props.selectedLgr;
     }
   } catch {
     localStorage.removeItem(LS_EDITOR_PROPS_KEY);
