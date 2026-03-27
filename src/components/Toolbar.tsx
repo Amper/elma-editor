@@ -13,17 +13,17 @@ import {
 } from "@phosphor-icons/react";
 
 const TOOLS: Array<{ id: ToolId; label: string; shortcut: string; desc: string; icon?: ReactNode }> = [
-  { id: ToolId.Select, label: 'Select', shortcut: 'S', desc: 'Click to select polygons and objects', icon: <SelectionIcon size={24} /> },
-  { id: ToolId.DrawPolygon, label: 'Polygon', shortcut: 'D', desc: 'Draw polygons by placing vertices', icon: <PolygonIcon size={24} /> },
-  { id: ToolId.Vertex, label: 'Vertex', shortcut: 'V', desc: 'Add, move and delete vertices', icon: <CirclesThreePlusIcon size={24} /> },
-  { id: ToolId.DrawObject, label: 'Object', shortcut: 'O', desc: 'Place flowers, apples, killers and starts', icon: <FlowerIcon size={24} /> },
-  { id: ToolId.Shape, label: 'Shape', shortcut: 'R', desc: 'Draw regular shapes (circle, hexagon...)', icon: <ShapesIcon size={24} /> },
-  { id: ToolId.DrawPicture, label: 'Picture', shortcut: 'Q', desc: 'Place LGR picture sprites', icon: <ImageSquareIcon size={24} /> },
-  { id: ToolId.DrawMask, label: 'Mask', shortcut: 'M', desc: 'Place textured mask pictures', icon: <SquareHalfBottomIcon size={24} /> },
-  { id: ToolId.Pipe, label: 'Pipe', shortcut: 'P', desc: 'Draw pipes along a spine path', icon: <PipeIcon size={24} /> },
-  { id: ToolId.Pan, label: 'Move', shortcut: 'H', desc: 'Pan the canvas view', icon: <ArrowsOutCardinalIcon size={24} /> },
-  { id: ToolId.ImageImport, label: 'Image', shortcut: 'I', desc: 'Import image contours as polygons', icon: <ImageIcon size={24} /> },
-  { id: ToolId.Text, label: 'Text', shortcut: 'X', desc: 'Convert text to polygons', icon: <TextTIcon size={24} /> },
+  { id: ToolId.Select, label: 'Select', shortcut: 'S', desc: 'Click to select polygons and objects', icon: <SelectionIcon size={20} /> },
+  { id: ToolId.DrawPolygon, label: 'Polygon', shortcut: 'D', desc: 'Draw polygons by placing vertices', icon: <PolygonIcon size={20} /> },
+  { id: ToolId.Vertex, label: 'Vertex', shortcut: 'V', desc: 'Add, move and delete vertices', icon: <CirclesThreePlusIcon size={20} /> },
+  { id: ToolId.DrawObject, label: 'Object', shortcut: 'O', desc: 'Place flowers, apples, killers and starts', icon: <FlowerIcon size={20} /> },
+  { id: ToolId.Shape, label: 'Shape', shortcut: 'R', desc: 'Draw regular shapes (circle, hexagon...)', icon: <ShapesIcon size={20} /> },
+  { id: ToolId.DrawPicture, label: 'Picture', shortcut: 'Q', desc: 'Place LGR picture sprites', icon: <ImageSquareIcon size={20} /> },
+  { id: ToolId.DrawMask, label: 'Mask', shortcut: 'M', desc: 'Place textured mask pictures', icon: <SquareHalfBottomIcon size={20} /> },
+  { id: ToolId.Pipe, label: 'Pipe', shortcut: 'P', desc: 'Draw pipes along a spine path', icon: <PipeIcon size={20} /> },
+  { id: ToolId.Pan, label: 'Move', shortcut: 'H', desc: 'Pan the canvas view', icon: <ArrowsOutCardinalIcon size={20} /> },
+  { id: ToolId.ImageImport, label: 'Image', shortcut: 'I', desc: 'Import image contours as polygons', icon: <ImageIcon size={20} /> },
+  { id: ToolId.Text, label: 'Text', shortcut: 'X', desc: 'Convert text to polygons', icon: <TextTIcon size={20} /> },
 ];
 
 export function Toolbar() {
