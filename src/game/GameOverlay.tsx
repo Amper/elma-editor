@@ -7,6 +7,7 @@ import { WebGLRenderer } from './engine/render/WebGLRenderer';
 import { loadLgrData } from '@/canvas/lgrCache';
 import { createGame, gameFrame, type GameState } from './engine/game/GameLoop';
 import type { LevelData } from './engine/level/Level';
+import { gameCameraRef } from './gameCameraRef';
 
 export function GameOverlay() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -101,10 +102,13 @@ export function GameOverlay() {
     };
     canvas.addEventListener('wheel', handleWheel, { passive: false });
 
-    const renderOpts = { showGrass: tc.showGrass, showPictures: tc.showPictures, showTextures: tc.showTextures };
+    const renderOpts = { showGrass: tc.showGrass, showPictures: tc.showPictures, showTextures: tc.showTextures, objectsAnimation: tc.objectsAnimation };
 
     const loop = (timestamp: number) => {
       gameFrame(gameState, timestamp);
+      gameCameraRef.x = gameState.camera.x;
+      gameCameraRef.y = gameState.camera.y;
+      gameCameraRef.active = true;
       renderer.render(gameState, renderOpts);
 
       // Restart key restarts the game at any time
@@ -157,6 +161,7 @@ export function GameOverlay() {
 
     return () => {
       aborted = true;
+      gameCameraRef.active = false;
       cancelAnimationFrame(animFrame);
       canvas.removeEventListener('wheel', handleWheel);
       observer.disconnect();

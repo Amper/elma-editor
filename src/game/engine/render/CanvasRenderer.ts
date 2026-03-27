@@ -29,7 +29,7 @@ export class CanvasRenderer {
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
 
-  render(state: GameState, _options?: { showGrass?: boolean; showPictures?: boolean; showTextures?: boolean }): void {
+  render(state: GameState, _options?: { showGrass?: boolean; showPictures?: boolean; showTextures?: boolean; objectsAnimation?: boolean }): void {
     const { ctx, canvas } = this;
     const width = canvas.clientWidth;
     const height = canvas.clientHeight;

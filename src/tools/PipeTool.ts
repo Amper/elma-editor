@@ -180,6 +180,10 @@ export class PipeTool implements EditorTool {
     return 'crosshair';
   }
 
+  wantsContextMenu(): boolean {
+    return this.spine.length === 0;
+  }
+
   // ── Private helpers ──
 
   private commitPipe() {

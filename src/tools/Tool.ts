@@ -22,4 +22,6 @@ export interface EditorTool {
   /** Draw tool-specific overlays (preview polygon, selection handles, etc.) */
   renderOverlay(ctx: CanvasRenderingContext2D): void;
   getCursor(): string;
+  /** Return false when the tool needs right-click for its own purposes. */
+  wantsContextMenu?(): boolean;
 }

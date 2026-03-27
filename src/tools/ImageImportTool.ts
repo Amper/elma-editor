@@ -103,6 +103,10 @@ export class ImageImportTool implements EditorTool {
     return store.imageImportPolygons ? 'crosshair' : 'default';
   }
 
+  wantsContextMenu(): boolean {
+    return this.getStore().imageImportPolygons === null;
+  }
+
   private placePolygons(worldPos: Vec2) {
     const store = this.getStore();
     const polygons = store.imageImportPolygons;

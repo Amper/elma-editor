@@ -1,59 +1,11 @@
-import { useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo, type ReactNode } from 'react';
 import { useEditorStore } from '@/state/editorStore';
 import { ObjectType, Gravity, Clip } from 'elmajs';
-import { ToolId } from '@/types';
-import { getEditorLgr, switchLgr } from '@/canvas/lgrCache';
-import { fetchLgrList, type LgrInfo } from '@/api/lgrApi';
+import { ToolId, type ShapeType } from '@/types';
+import { getEditorLgr } from '@/canvas/lgrCache';
 import { traceImage } from '@/utils/imageTrace';
 import { textToPolygons, loadGoogleFont, loadGoogleFontPreview, SYSTEM_FONTS, GOOGLE_FONTS } from '@/utils/textTrace';
-import { CaretUpDown } from '@phosphor-icons/react';
-import type { AutoGrassConfig } from '@/utils/autoGrass';
-
-/** Display a keyboard code as a readable label. */
-function keyLabel(code: string): string {
-  if (code.startsWith('Key')) return code.slice(3);
-  if (code.startsWith('Digit')) return code.slice(5);
-  if (code.startsWith('Arrow')) return code.slice(5);
-  const map: Record<string, string> = {
-    Space: 'Space', Escape: 'Esc', Enter: 'Enter', Tab: 'Tab',
-    ShiftLeft: 'L-Shift', ShiftRight: 'R-Shift',
-    ControlLeft: 'L-Ctrl', ControlRight: 'R-Ctrl',
-    AltLeft: 'L-Alt', AltRight: 'R-Alt',
-    Backspace: 'Backspace', Delete: 'Delete',
-    Equal: '=', Minus: '-', BracketLeft: '[', BracketRight: ']',
-    Semicolon: ';', Quote: "'", Backquote: '`', Backslash: '\\',
-    Comma: ',', Period: '.', Slash: '/',
-  };
-  return map[code] ?? code;
-}
-
-/** Inline key-capture input: click to focus, press a key to rebind. */
-function KeyInput({ value, onChange }: { value: string; onChange: (code: string) => void }) {
-  const [listening, setListening] = useState(false);
-
-  useEffect(() => {
-    if (!listening) return;
-    const handler = (e: KeyboardEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      onChange(e.code);
-      setListening(false);
-    };
-    window.addEventListener('keydown', handler, true);
-    return () => window.removeEventListener('keydown', handler, true);
-  }, [listening, onChange]);
-
-  return (
-    <button
-      className="input"
-      style={{ minWidth: 60, textAlign: 'center', cursor: 'pointer' }}
-      onClick={() => setListening(true)}
-      onBlur={() => setListening(false)}
-    >
-      {listening ? '...' : keyLabel(value)}
-    </button>
-  );
-}
+import { CaretUpDown, FlowerIcon, AppleLogoIcon, SkullIcon, FlagIcon, ArrowDownIcon, ArrowUpIcon, ArrowLeftIcon, ArrowRightIcon, DotOutlineIcon, PolygonIcon, PlantIcon, TriangleIcon, SquareIcon, RectangleIcon, DiamondIcon, ParallelogramIcon, CircleIcon, PentagonIcon, StarIcon, ShuffleIcon } from '@phosphor-icons/react';
 
 /* ── Accordion section wrapper ── */
 function Section({
@@ -93,12 +45,83 @@ const TOOL_SECTIONS_MAP: Partial<Record<ToolId, string[]>> = {
   [ToolId.DrawObject]: ['objectPlacement'],
   [ToolId.DrawPicture]: ['picturePlacement'],
   [ToolId.DrawMask]: ['maskPlacement'],
-  [ToolId.DrawPolygon]: ['polygon', 'grid'],
-  [ToolId.Vertex]: ['grid'],
 };
 
 /* Section IDs that are tool-specific (conditionally rendered) */
-const TOOL_ONLY_SECTIONS = new Set(['pipe', 'shape', 'imageImport', 'text', 'polygon', 'maskPlacement', 'objectPlacement']);
+const TOOL_ONLY_SECTIONS = new Set(['pipe', 'shape', 'imageImport', 'text', 'maskPlacement', 'objectPlacement']);
+
+/* ── Picture thumbnail (renders ImageBitmap to a tiny canvas) ── */
+function PictureThumbnail({ bitmap, size = 40 }: { bitmap: ImageBitmap; size?: number }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = size * dpr;
+    canvas.height = size * dpr;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    // Fit bitmap into the square, preserving aspect ratio
+    const scale = Math.min((size * dpr) / bitmap.width, (size * dpr) / bitmap.height);
+    const w = bitmap.width * scale;
+    const h = bitmap.height * scale;
+    ctx.drawImage(bitmap, (size * dpr - w) / 2, (size * dpr - h) / 2, w, h);
+  }, [bitmap, size]);
+  return <canvas ref={canvasRef} style={{ width: size, height: size, display: 'block' }} />;
+}
+
+/* ── Generic bitmap picker grid with search ── */
+function BitmapPicker({
+  items,
+  selected,
+  onSelect,
+  placeholder = 'Filter…',
+}: {
+  items: Map<string, { bitmap: ImageBitmap }> | Map<string, ImageBitmap> | undefined;
+  selected: string;
+  onSelect: (name: string) => void;
+  placeholder?: string;
+}) {
+  const [filter, setFilter] = useState('');
+  const allNames = useMemo(() => [...(items?.keys() ?? [])].sort(), [items]);
+  const filtered = useMemo(
+    () => filter ? allNames.filter((n) => n.includes(filter.toLowerCase())) : allNames,
+    [allNames, filter],
+  );
+
+  return (
+    <div className="picture-picker">
+      <input
+        type="text"
+        className="input picture-picker__search"
+        placeholder={placeholder}
+        value={filter}
+        onChange={(e) => setFilter(e.target.value)}
+      />
+      <div className="picture-picker__grid">
+        {filtered.map((name) => {
+          const entry = items?.get(name);
+          const bitmap = entry instanceof ImageBitmap ? entry : entry?.bitmap;
+          return (
+            <button
+              key={name}
+              className={`picture-picker__item${name === selected ? ' picture-picker__item--active' : ''}`}
+              onClick={() => onSelect(name)}
+              title={name}
+            >
+              {bitmap && <PictureThumbnail bitmap={bitmap} size={40} />}
+              <span className="picture-picker__name">{name}</span>
+            </button>
+          );
+        })}
+        {filtered.length === 0 && (
+          <div className="picture-picker__empty">No matches</div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 /* ── Font picker with search + live preview ── */
 
@@ -427,22 +450,14 @@ export function PropertyPanel() {
   const selection = useEditorStore((s) => s.selection);
   const objectConfig = useEditorStore((s) => s.objectConfig);
   const setObjectConfig = useEditorStore((s) => s.setObjectConfig);
-  const setLevelName = useEditorStore((s) => s.setLevelName);
-  const setLevelGround = useEditorStore((s) => s.setLevelGround);
-  const setLevelSky = useEditorStore((s) => s.setLevelSky);
-  const fileName = useEditorStore((s) => s.fileName);
-  const setFileName = useEditorStore((s) => s.setFileName);
-
   const updateObjects = useEditorStore((s) => s.updateObjects);
-  const grid = useEditorStore((s) => s.grid);
-  const setGrid = useEditorStore((s) => s.setGrid);
   const activeTool = useEditorStore((s) => s.activeTool);
   const pipeRadius = useEditorStore((s) => s.pipeRadius);
   const setPipeRadius = useEditorStore((s) => s.setPipeRadius);
   const pipeRoundCorners = useEditorStore((s) => s.pipeRoundCorners);
   const setPipeRoundCorners = useEditorStore((s) => s.setPipeRoundCorners);
-  const shapeSides = useEditorStore((s) => s.shapeSides);
-  const setShapeSides = useEditorStore((s) => s.setShapeSides);
+  const shapeConfig = useEditorStore((s) => s.shapeConfig);
+  const setShapeConfig = useEditorStore((s) => s.setShapeConfig);
   const pictureConfig = useEditorStore((s) => s.pictureConfig);
   const setPictureConfig = useEditorStore((s) => s.setPictureConfig);
   const maskConfig = useEditorStore((s) => s.maskConfig);
@@ -455,47 +470,8 @@ export function PropertyPanel() {
   const setTextConfig = useEditorStore((s) => s.setTextConfig);
   const textPolygons = useEditorStore((s) => s.textPolygons);
   const setTextPolygons = useEditorStore((s) => s.setTextPolygons);
-  const drawPolygonGrass = useEditorStore((s) => s.drawPolygonGrass);
-  const setDrawPolygonGrass = useEditorStore((s) => s.setDrawPolygonGrass);
-  const autoGrassConfig = useEditorStore((s) => s.autoGrassConfig);
-  const setAutoGrassConfig = useEditorStore((s) => s.setAutoGrassConfig);
-  const showGrass = useEditorStore((s) => s.showGrass);
-  const setShowGrass = useEditorStore((s) => s.setShowGrass);
-  const showPictures = useEditorStore((s) => s.showPictures);
-  const setShowPictures = useEditorStore((s) => s.setShowPictures);
-  const showTextures = useEditorStore((s) => s.showTextures);
-  const setShowTextures = useEditorStore((s) => s.setShowTextures);
-  const showObjects = useEditorStore((s) => s.showObjects);
-  const setShowObjects = useEditorStore((s) => s.setShowObjects);
-  const testConfig = useEditorStore((s) => s.testConfig);
-  const setTestConfig = useEditorStore((s) => s.setTestConfig);
-  const selectedLgr = useEditorStore((s) => s.selectedLgr);
-  const setSelectedLgr = useEditorStore((s) => s.setSelectedLgr);
-  const lgrLoading = useEditorStore((s) => s.lgrLoading);
-  const setLgrLoading = useEditorStore((s) => s.setLgrLoading);
-
-  const [lgrList, setLgrList] = useState<LgrInfo[]>([]);
-  useEffect(() => { fetchLgrList().then(setLgrList); }, []);
-
-  const handleLgrChange = useCallback(async (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const name = e.target.value;
-    setSelectedLgr(name);
-    setLgrLoading(true);
-    try {
-      if (name === 'Default') {
-        await switchLgr('/lgr/Default.lgr');
-      } else {
-        await switchLgr(`https://api.elma.online/api/lgr/get/${name}`);
-      }
-    } catch (err) {
-      console.warn('Failed to load LGR:', err);
-    } finally {
-      setLgrLoading(false);
-    }
-  }, [lgrList, setSelectedLgr, setLgrLoading]);
-
   // Accordion open state — set of open section IDs
-  const [openSections, setOpenSections] = useState<Set<string>>(() => new Set(['level']));
+  const [openSections, setOpenSections] = useState<Set<string>>(() => new Set());
 
   const hasSelection = selection.polygonIndices.size > 0 || selection.objectIndices.size > 0 || selection.pictureIndices.size > 0;
 
@@ -519,12 +495,6 @@ export function PropertyPanel() {
       if (sections) {
         for (const s of sections) next.add(s);
       }
-      // Open level section only when Select tool and nothing selected
-      if (activeTool === ToolId.Select && !hasSelection) {
-        next.add('level');
-      } else {
-        next.delete('level');
-      }
       return next;
     });
   }, [activeTool, hasSelection]);
@@ -538,7 +508,9 @@ export function PropertyPanel() {
     });
   }, []);
 
-  if (!level) {
+  const hasToolSections = activeTool in TOOL_SECTIONS_MAP;
+
+  if (!level || (!hasSelection && !hasToolSections)) {
     return null;
   }
 
@@ -590,15 +562,20 @@ export function PropertyPanel() {
             {selectedPolys.length === 1 ? `Polygon #${selectedPolyIndices![0]}` : `${selectedPolys.length} Polygons`}
           </h3>
           <div className="accordion-body">
-            <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <input
-                type="checkbox"
-                checked={commonGrass ?? false}
-                ref={(el) => { if (el) el.indeterminate = commonGrass === undefined; }}
-                onChange={(e) => setPolygonsGrass(selectedPolyIndices!, e.target.checked)}
-              />
-              Grass
-            </label>
+            <div className="type-switch type-switch--vertical">
+              <button
+                className={`type-switch__option${commonGrass === false ? ' type-switch__option--active' : ''}`}
+                onClick={() => setPolygonsGrass(selectedPolyIndices!, false)}
+              >
+                <span className="type-switch__icon" style={{ color: '#2a5a8a' }}><PolygonIcon size={16} weight="fill" /></span> <span style={{ color: '#80b0e0' }}>Regular</span>
+              </button>
+              <button
+                className={`type-switch__option${commonGrass === true ? ' type-switch__option--active' : ''}`}
+                onClick={() => setPolygonsGrass(selectedPolyIndices!, true)}
+              >
+                <span className="type-switch__icon" style={{ color: '#2a6a2a' }}><PlantIcon size={16} weight="fill" /></span> <span style={{ color: '#80c080' }}>Grass</span>
+              </button>
+            </div>
             {selectedPolys.length === 1 && (
               <div className="detail-text">
                 Vertices: {selectedPolys[0]!.vertices.length}
@@ -619,42 +596,70 @@ export function PropertyPanel() {
                 Position: ({selectedObjects[0]!.position.x.toFixed(2)}, {selectedObjects[0]!.position.y.toFixed(2)})
               </div>
             )}
-            <label className="form-label">
-              Type
-              <select
-                value={commonType ?? ''}
-                onChange={(e) =>
-                  updateObjects(selectedObjIndices!, { type: Number(e.target.value) as ObjectType })
-                }
-                className="select"
+            <div className="type-switch type-switch--vertical">
+              <button
+                className={`type-switch__option${commonType === ObjectType.Exit ? ' type-switch__option--active' : ''}`}
+                onClick={() => updateObjects(selectedObjIndices!, { type: ObjectType.Exit })}
               >
-                {commonType === undefined && <option value="">Mixed</option>}
-                <option value={ObjectType.Exit}>Flower (Exit)</option>
-                <option value={ObjectType.Apple}>Apple</option>
-                <option value={ObjectType.Killer}>Killer</option>
-                {(!hasStart || commonType === ObjectType.Start) && (
-                  <option value={ObjectType.Start}>Start</option>
-                )}
-              </select>
-            </label>
-            {(commonType === ObjectType.Apple || (commonType === undefined && anyApple)) && (
-              <label className="form-label">
-                Gravity
-                <select
-                  value={commonGravity ?? ''}
-                  onChange={(e) =>
-                    updateObjects(selectedObjIndices!, { gravity: Number(e.target.value) as Gravity })
-                  }
-                  className="select"
+                <span className="type-switch__icon" style={{ color: '#6a5a00' }}><FlowerIcon size={16} weight="fill" /></span> <span style={{ color: '#d0c860' }}>Flower (Exit)</span>
+              </button>
+              <button
+                className={`type-switch__option${commonType === ObjectType.Apple ? ' type-switch__option--active' : ''}`}
+                onClick={() => updateObjects(selectedObjIndices!, { type: ObjectType.Apple })}
+              >
+                <span className="type-switch__icon" style={{ color: '#a02020' }}><AppleLogoIcon size={16} weight="fill" /></span> <span style={{ color: '#e08080' }}>Apple</span>
+              </button>
+              <button
+                className={`type-switch__option${commonType === ObjectType.Killer ? ' type-switch__option--active' : ''}`}
+                onClick={() => updateObjects(selectedObjIndices!, { type: ObjectType.Killer })}
+              >
+                <span className="type-switch__icon" style={{ color: '#444' }}><SkullIcon size={16} weight="fill" /></span> <span style={{ color: '#909090' }}>Killer</span>
+              </button>
+              {(!hasStart || commonType === ObjectType.Start) && (
+                <button
+                  className={`type-switch__option${commonType === ObjectType.Start ? ' type-switch__option--active' : ''}`}
+                  onClick={() => updateObjects(selectedObjIndices!, { type: ObjectType.Start })}
                 >
-                  {commonGravity === undefined && <option value="">Mixed</option>}
-                  <option value={Gravity.None}>Normal</option>
-                  <option value={Gravity.Up}>Up</option>
-                  <option value={Gravity.Down}>Down</option>
-                  <option value={Gravity.Left}>Left</option>
-                  <option value={Gravity.Right}>Right</option>
-                </select>
-              </label>
+                  <span className="type-switch__icon" style={{ color: '#2a5a8a' }}><FlagIcon size={16} weight="fill" /></span> <span style={{ color: '#80b0e0' }}>Start</span>
+                </button>
+              )}
+            </div>
+            {(commonType === ObjectType.Apple || (commonType === undefined && anyApple)) && (
+              <>
+                <div style={{ marginTop: 'var(--space-md)', marginBottom: 'var(--space-xs)', fontSize: 11, color: 'var(--color-text-secondary)' }}>Gravity</div>
+                <div className="type-switch type-switch--vertical">
+                  <button
+                    className={`type-switch__option${commonGravity === Gravity.None ? ' type-switch__option--active' : ''}`}
+                    onClick={() => updateObjects(selectedObjIndices!, { gravity: Gravity.None })}
+                  >
+                    <span className="type-switch__icon" style={{ color: '#333' }}><DotOutlineIcon size={16} weight="fill" /></span> <span style={{ color: '#aaa' }}>Normal</span>
+                  </button>
+                  <button
+                    className={`type-switch__option${commonGravity === Gravity.Up ? ' type-switch__option--active' : ''}`}
+                    onClick={() => updateObjects(selectedObjIndices!, { gravity: Gravity.Up })}
+                  >
+                    <span className="type-switch__icon" style={{ color: '#222' }}><ArrowUpIcon size={16} weight="fill" /></span> <span style={{ color: '#aaa' }}>Up</span>
+                  </button>
+                  <button
+                    className={`type-switch__option${commonGravity === Gravity.Down ? ' type-switch__option--active' : ''}`}
+                    onClick={() => updateObjects(selectedObjIndices!, { gravity: Gravity.Down })}
+                  >
+                    <span className="type-switch__icon" style={{ color: '#222' }}><ArrowDownIcon size={16} weight="fill" /></span> <span style={{ color: '#aaa' }}>Down</span>
+                  </button>
+                  <button
+                    className={`type-switch__option${commonGravity === Gravity.Left ? ' type-switch__option--active' : ''}`}
+                    onClick={() => updateObjects(selectedObjIndices!, { gravity: Gravity.Left })}
+                  >
+                    <span className="type-switch__icon" style={{ color: '#222' }}><ArrowLeftIcon size={16} weight="fill" /></span> <span style={{ color: '#aaa' }}>Left</span>
+                  </button>
+                  <button
+                    className={`type-switch__option${commonGravity === Gravity.Right ? ' type-switch__option--active' : ''}`}
+                    onClick={() => updateObjects(selectedObjIndices!, { gravity: Gravity.Right })}
+                  >
+                    <span className="type-switch__icon" style={{ color: '#222' }}><ArrowRightIcon size={16} weight="fill" /></span> <span style={{ color: '#aaa' }}>Right</span>
+                  </button>
+                </div>
+              </>
             )}
           </div>
         </>
@@ -775,121 +780,105 @@ export function PropertyPanel() {
         </>
       )}
 
-      <Section id="level" title="Level" open={openSections.has('level')} onToggle={toggleSection}>
-        <label className="form-label">
-          File Name (.lev)
-          <input
-            type="text"
-            value={(fileName ?? 'untitled.lev').replace(/\.lev$/i, '')}
-            onChange={(e) => setFileName(e.target.value + '.lev')}
-            className="input"
-          />
-        </label>
-        <label className="form-label">
-          Level Name
-          <input
-            type="text"
-            value={level.name}
-            onChange={(e) => setLevelName(e.target.value)}
-            maxLength={50}
-            className="input"
-          />
-        </label>
-        <label className="form-label">
-          Ground Texture
-          <select
-            value={level.ground}
-            onChange={(e) => setLevelGround(e.target.value)}
-            className="select"
-          >
-            {[...(getEditorLgr()?.texturePatterns.keys() ?? [])].sort().map((name) => (
-              <option key={name} value={name}>{name}</option>
-            ))}
-          </select>
-        </label>
-        <label className="form-label">
-          Sky Texture
-          <select
-            value={level.sky}
-            onChange={(e) => setLevelSky(e.target.value)}
-            className="select"
-          >
-            {[...(getEditorLgr()?.texturePatterns.keys() ?? [])].sort().map((name) => (
-              <option key={name} value={name}>{name}</option>
-            ))}
-          </select>
-        </label>
-        <div className="detail-text">
-          LGR: {level.lgr}
-        </div>
-      </Section>
-
       {activeTool === ToolId.DrawObject && (
-      <Section id="objectPlacement" title="Object Placement" open={openSections.has('objectPlacement')} onToggle={toggleSection}>
-        <label className="form-label">
-          Type
-          <select
-            value={objectConfig.type}
-            onChange={(e) =>
-              setObjectConfig({ type: Number(e.target.value) as ObjectType })
-            }
-            className="select"
+      <Section id="objectPlacement" title="Object" open={openSections.has('objectPlacement')} onToggle={toggleSection}>
+        <div className="type-switch type-switch--vertical">
+          <button
+            className={`type-switch__option${objectConfig.type === ObjectType.Exit ? ' type-switch__option--active' : ''}`}
+            onClick={() => setObjectConfig({ type: ObjectType.Exit })}
           >
-            <option value={ObjectType.Exit}>Flower (Exit)</option>
-            <option value={ObjectType.Apple}>Apple</option>
-            <option value={ObjectType.Killer}>Killer</option>
-            {!hasStart && <option value={ObjectType.Start}>Start</option>}
-          </select>
-        </label>
-        {objectConfig.type === ObjectType.Apple && (
-          <label className="form-label">
-            Gravity
-            <select
-              value={objectConfig.gravity}
-              onChange={(e) =>
-                setObjectConfig({
-                  gravity: Number(e.target.value) as Gravity,
-                })
-              }
-              className="select"
+            <span className="type-switch__icon" style={{ color: '#6a5a00' }}><FlowerIcon size={16} weight="fill" /></span> <span style={{ color: '#d0c860' }}>Flower (Exit)</span>
+          </button>
+          <button
+            className={`type-switch__option${objectConfig.type === ObjectType.Apple ? ' type-switch__option--active' : ''}`}
+            onClick={() => setObjectConfig({ type: ObjectType.Apple })}
+          >
+            <span className="type-switch__icon" style={{ color: '#a02020' }}><AppleLogoIcon size={16} weight="fill" /></span> <span style={{ color: '#e08080' }}>Apple</span>
+          </button>
+          <button
+            className={`type-switch__option${objectConfig.type === ObjectType.Killer ? ' type-switch__option--active' : ''}`}
+            onClick={() => setObjectConfig({ type: ObjectType.Killer })}
+          >
+            <span className="type-switch__icon" style={{ color: '#444' }}><SkullIcon size={16} weight="fill" /></span> <span style={{ color: '#909090' }}>Killer</span>
+          </button>
+          {!hasStart && (
+            <button
+              className={`type-switch__option${objectConfig.type === ObjectType.Start ? ' type-switch__option--active' : ''}`}
+              onClick={() => setObjectConfig({ type: ObjectType.Start })}
             >
-              <option value={Gravity.None}>Normal</option>
-              <option value={Gravity.Up}>Up</option>
-              <option value={Gravity.Down}>Down</option>
-              <option value={Gravity.Left}>Left</option>
-              <option value={Gravity.Right}>Right</option>
-            </select>
-          </label>
+              <span className="type-switch__icon" style={{ color: '#2a5a8a' }}><FlagIcon size={16} weight="fill" /></span> <span style={{ color: '#80b0e0' }}>Start</span>
+            </button>
+          )}
+        </div>
+        {objectConfig.type === ObjectType.Apple && (
+          <>
+            <div style={{ marginTop: 'var(--space-md)', marginBottom: 'var(--space-xs)', fontSize: 11, color: 'var(--color-text-secondary)' }}>Gravity</div>
+            <div className="type-switch type-switch--vertical">
+              <button
+                className={`type-switch__option${objectConfig.gravity === Gravity.None ? ' type-switch__option--active' : ''}`}
+                onClick={() => setObjectConfig({ gravity: Gravity.None })}
+              >
+                <span className="type-switch__icon" style={{ color: '#333' }}><DotOutlineIcon size={16} weight="fill" /></span> <span style={{ color: '#aaa' }}>Normal</span>
+              </button>
+              <button
+                className={`type-switch__option${objectConfig.gravity === Gravity.Up ? ' type-switch__option--active' : ''}`}
+                onClick={() => setObjectConfig({ gravity: Gravity.Up })}
+              >
+                <span className="type-switch__icon" style={{ color: '#222' }}><ArrowUpIcon size={16} weight="fill" /></span> <span style={{ color: '#aaa' }}>Up</span>
+              </button>
+              <button
+                className={`type-switch__option${objectConfig.gravity === Gravity.Down ? ' type-switch__option--active' : ''}`}
+                onClick={() => setObjectConfig({ gravity: Gravity.Down })}
+              >
+                <span className="type-switch__icon" style={{ color: '#222' }}><ArrowDownIcon size={16} weight="fill" /></span> <span style={{ color: '#aaa' }}>Down</span>
+              </button>
+              <button
+                className={`type-switch__option${objectConfig.gravity === Gravity.Left ? ' type-switch__option--active' : ''}`}
+                onClick={() => setObjectConfig({ gravity: Gravity.Left })}
+              >
+                <span className="type-switch__icon" style={{ color: '#222' }}><ArrowLeftIcon size={16} weight="fill" /></span> <span style={{ color: '#aaa' }}>Left</span>
+              </button>
+              <button
+                className={`type-switch__option${objectConfig.gravity === Gravity.Right ? ' type-switch__option--active' : ''}`}
+                onClick={() => setObjectConfig({ gravity: Gravity.Right })}
+              >
+                <span className="type-switch__icon" style={{ color: '#222' }}><ArrowRightIcon size={16} weight="fill" /></span> <span style={{ color: '#aaa' }}>Right</span>
+              </button>
+            </div>
+          </>
         )}
       </Section>
       )}
 
       {activeTool === ToolId.DrawPicture && (
         <Section id="picturePlacement" title="Picture" open={openSections.has('picturePlacement')} onToggle={toggleSection}>
-          <label className="form-label">
-            Name
-            <select
-              value={pictureConfig.name}
-              onChange={(e) => setPictureConfig({ name: e.target.value })}
-              className="select"
+          <BitmapPicker
+            items={getEditorLgr()?.pictures}
+            selected={pictureConfig.name}
+            onSelect={(name) => setPictureConfig({ name })}
+            placeholder="Filter pictures…"
+          />
+          <div style={{ marginBottom: 'var(--space-xs)', fontSize: 11, color: 'var(--color-text-secondary)' }}>Clipping</div>
+          <div className="type-switch type-switch--vertical">
+            <button
+              className={`type-switch__option${pictureConfig.clip === Clip.Ground ? ' type-switch__option--active' : ''}`}
+              onClick={() => setPictureConfig({ clip: Clip.Ground })}
             >
-              {[...(getEditorLgr()?.pictures.keys() ?? [])].sort().map((name) => (
-                <option key={name} value={name}>{name}</option>
-              ))}
-            </select>
-          </label>
-          <label className="form-label">
-            Clipping
-            <select
-              value={pictureConfig.clip}
-              onChange={(e) => setPictureConfig({ clip: Number(e.target.value) as Clip })}
-              className="select"
+              <span className="type-switch__icon" style={{ color: '#5a3a1a' }}><PolygonIcon size={16} weight="fill" /></span> <span style={{ color: '#c0a060' }}>Ground</span>
+            </button>
+            <button
+              className={`type-switch__option${pictureConfig.clip === Clip.Sky ? ' type-switch__option--active' : ''}`}
+              onClick={() => setPictureConfig({ clip: Clip.Sky })}
             >
-              <option value={Clip.Unclipped}>Unclipped</option>
-              <option value={Clip.Ground}>Ground</option>
-              <option value={Clip.Sky}>Sky</option>
-            </select>
-          </label>
+              <span className="type-switch__icon" style={{ color: '#2a4a6a' }}><CircleIcon size={16} weight="fill" /></span> <span style={{ color: '#80b0d0' }}>Sky</span>
+            </button>
+            <button
+              className={`type-switch__option${pictureConfig.clip === Clip.Unclipped ? ' type-switch__option--active' : ''}`}
+              onClick={() => setPictureConfig({ clip: Clip.Unclipped })}
+            >
+              <span className="type-switch__icon" style={{ color: '#444' }}><SquareIcon size={16} weight="fill" /></span> <span style={{ color: '#aaa' }}>Unclipped</span>
+            </button>
+          </div>
           <label className="form-label">
             Distance
             <input
@@ -906,42 +895,41 @@ export function PropertyPanel() {
 
       {activeTool === ToolId.DrawMask && (
         <Section id="maskPlacement" title="Mask / Texture" open={openSections.has('maskPlacement')} onToggle={toggleSection}>
-          <label className="form-label">
-            Texture
-            <select
-              value={maskConfig.texture}
-              onChange={(e) => setMaskConfig({ texture: e.target.value })}
-              className="select"
+          <span className="form-label">Texture</span>
+          <BitmapPicker
+            items={getEditorLgr()?.textureBitmaps}
+            selected={maskConfig.texture}
+            onSelect={(name) => setMaskConfig({ texture: name })}
+            placeholder="Filter textures…"
+          />
+          <span className="form-label">Mask</span>
+          <BitmapPicker
+            items={getEditorLgr()?.masks}
+            selected={maskConfig.mask}
+            onSelect={(name) => setMaskConfig({ mask: name })}
+            placeholder="Filter masks…"
+          />
+          <div style={{ marginBottom: 'var(--space-xs)', fontSize: 11, color: 'var(--color-text-secondary)' }}>Clipping</div>
+          <div className="type-switch type-switch--vertical">
+            <button
+              className={`type-switch__option${maskConfig.clip === Clip.Ground ? ' type-switch__option--active' : ''}`}
+              onClick={() => setMaskConfig({ clip: Clip.Ground })}
             >
-              {[...(getEditorLgr()?.texturePatterns.keys() ?? [])].sort().map((name) => (
-                <option key={name} value={name}>{name}</option>
-              ))}
-            </select>
-          </label>
-          <label className="form-label">
-            Mask
-            <select
-              value={maskConfig.mask}
-              onChange={(e) => setMaskConfig({ mask: e.target.value })}
-              className="select"
+              <span className="type-switch__icon" style={{ color: '#5a3a1a' }}><PolygonIcon size={16} weight="fill" /></span> <span style={{ color: '#c0a060' }}>Ground</span>
+            </button>
+            <button
+              className={`type-switch__option${maskConfig.clip === Clip.Sky ? ' type-switch__option--active' : ''}`}
+              onClick={() => setMaskConfig({ clip: Clip.Sky })}
             >
-              {[...(getEditorLgr()?.masks.keys() ?? [])].sort().map((name) => (
-                <option key={name} value={name}>{name}</option>
-              ))}
-            </select>
-          </label>
-          <label className="form-label">
-            Clipping
-            <select
-              value={maskConfig.clip}
-              onChange={(e) => setMaskConfig({ clip: Number(e.target.value) as Clip })}
-              className="select"
+              <span className="type-switch__icon" style={{ color: '#2a4a6a' }}><CircleIcon size={16} weight="fill" /></span> <span style={{ color: '#80b0d0' }}>Sky</span>
+            </button>
+            <button
+              className={`type-switch__option${maskConfig.clip === Clip.Unclipped ? ' type-switch__option--active' : ''}`}
+              onClick={() => setMaskConfig({ clip: Clip.Unclipped })}
             >
-              <option value={Clip.Unclipped}>Unclipped</option>
-              <option value={Clip.Ground}>Ground</option>
-              <option value={Clip.Sky}>Sky</option>
-            </select>
-          </label>
+              <span className="type-switch__icon" style={{ color: '#444' }}><SquareIcon size={16} weight="fill" /></span> <span style={{ color: '#aaa' }}>Unclipped</span>
+            </button>
+          </div>
           <label className="form-label">
             Distance
             <input
@@ -956,18 +944,6 @@ export function PropertyPanel() {
         </Section>
       )}
 
-      {activeTool === ToolId.DrawPolygon && (
-        <Section id="polygon" title="Polygon" open={openSections.has('polygon')} onToggle={toggleSection}>
-          <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <input
-              type="checkbox"
-              checked={drawPolygonGrass}
-              onChange={(e) => setDrawPolygonGrass(e.target.checked)}
-            />
-            Grass
-          </label>
-        </Section>
-      )}
 
       {activeTool === ToolId.Pipe && (
         <Section id="pipe" title="Pipe" open={openSections.has('pipe')} onToggle={toggleSection}>
@@ -1022,27 +998,109 @@ export function PropertyPanel() {
 
       {activeTool === ToolId.Shape && (
         <Section id="shape" title="Shape" open={openSections.has('shape')} onToggle={toggleSection}>
-          <label className="form-label">
-            Sides
-            <input
-              type="number"
-              value={shapeSides}
-              min={3}
-              max={1024}
-              step={1}
-              onChange={(e) => {
-                const val = parseInt(e.target.value, 10);
-                if (val >= 3 && val <= 1024 && isFinite(val)) {
-                  setShapeSides(val);
-                }
-              }}
-              className="input"
-            />
-          </label>
-          <div className="detail-text" style={{ marginTop: 4 }}>
-            Click to place center, move to set size, click to confirm.
-            Right-click or Esc to cancel.
+          <div className="type-switch type-switch--vertical">
+            {([
+              ['triangle', TriangleIcon, 'Triangle', '#6090c0'],
+              ['square', SquareIcon, 'Square', '#6090c0'],
+              ['rectangle', RectangleIcon, 'Rectangle', '#6090c0'],
+              ['trapezoid', DiamondIcon, 'Trapezoid', '#6090c0'],
+              ['parallelogram', ParallelogramIcon, 'Parallelogram', '#6090c0'],
+              ['circle', CircleIcon, 'Circle', '#60a060'],
+              ['ellipse', CircleIcon, 'Ellipse', '#60a060'],
+              ['polygon', PentagonIcon, 'Polygon', '#c09060'],
+              ['star', StarIcon, 'Star', '#c0a030'],
+              ['random', ShuffleIcon, 'Random', '#a060c0'],
+            ] as const).map(([type, Icon, label, color]) => (
+              <button
+                key={type}
+                className={`type-switch__option${shapeConfig.type === type ? ' type-switch__option--active' : ''}`}
+                onClick={() => setShapeConfig({ type: type as ShapeType })}
+              >
+                <span className="type-switch__icon" style={{ color }}><Icon size={16} weight="fill" /></span>
+                <span style={{ color }}>{label}</span>
+              </button>
+            ))}
           </div>
+
+          {shapeConfig.type === 'trapezoid' && (
+            <label className="form-label" style={{ marginTop: 'var(--space-md)' }}>
+              Top ratio %
+              <input type="number" value={shapeConfig.topRatio} min={1} max={99} step={1}
+                onChange={(e) => { const v = parseInt(e.target.value, 10); if (v >= 1 && v <= 99) setShapeConfig({ topRatio: v }); }}
+                className="input" />
+            </label>
+          )}
+
+          {shapeConfig.type === 'parallelogram' && (
+            <label className="form-label" style={{ marginTop: 'var(--space-md)' }}>
+              Tilt angle
+              <input type="number" value={shapeConfig.tiltAngle} min={1} max={80} step={1}
+                onChange={(e) => { const v = parseInt(e.target.value, 10); if (v >= 1 && v <= 80) setShapeConfig({ tiltAngle: v }); }}
+                className="input" />
+            </label>
+          )}
+
+          {shapeConfig.type === 'circle' && (
+            <label className="form-label" style={{ marginTop: 'var(--space-md)' }}>
+              Segments
+              <input type="number" value={shapeConfig.segments} min={8} max={1024} step={1}
+                onChange={(e) => { const v = parseInt(e.target.value, 10); if (v >= 8 && v <= 1024) setShapeConfig({ segments: v }); }}
+                className="input" />
+            </label>
+          )}
+
+          {shapeConfig.type === 'ellipse' && (
+            <label className="form-label" style={{ marginTop: 'var(--space-md)' }}>
+              Segments
+              <input type="number" value={shapeConfig.segments} min={8} max={1024} step={1}
+                onChange={(e) => { const v = parseInt(e.target.value, 10); if (v >= 8 && v <= 1024) setShapeConfig({ segments: v }); }}
+                className="input" />
+            </label>
+          )}
+
+          {shapeConfig.type === 'polygon' && (
+            <label className="form-label" style={{ marginTop: 'var(--space-md)' }}>
+              Sides
+              <input type="number" value={shapeConfig.sides} min={3} max={1024} step={1}
+                onChange={(e) => { const v = parseInt(e.target.value, 10); if (v >= 3 && v <= 1024) setShapeConfig({ sides: v }); }}
+                className="input" />
+            </label>
+          )}
+
+          {shapeConfig.type === 'star' && (
+            <>
+              <label className="form-label" style={{ marginTop: 'var(--space-md)' }}>
+                Points
+                <input type="number" value={shapeConfig.starPoints} min={3} max={64} step={1}
+                  onChange={(e) => { const v = parseInt(e.target.value, 10); if (v >= 3 && v <= 64) setShapeConfig({ starPoints: v }); }}
+                  className="input" />
+              </label>
+              <label className="form-label">
+                Depth %
+                <input type="number" value={shapeConfig.starDepth} min={1} max={99} step={1}
+                  onChange={(e) => { const v = parseInt(e.target.value, 10); if (v >= 1 && v <= 99) setShapeConfig({ starDepth: v }); }}
+                  className="input" />
+              </label>
+            </>
+          )}
+
+          {shapeConfig.type === 'random' && (
+            <>
+              <label className="form-label" style={{ marginTop: 'var(--space-md)' }}>
+                Min vertices
+                <input type="number" value={shapeConfig.randomMinVertices} min={3} max={64} step={1}
+                  onChange={(e) => { const v = parseInt(e.target.value, 10); if (v >= 3 && v <= 64) setShapeConfig({ randomMinVertices: v, randomMaxVertices: Math.max(v, shapeConfig.randomMaxVertices) }); }}
+                  className="input" />
+              </label>
+              <label className="form-label">
+                Max vertices
+                <input type="number" value={shapeConfig.randomMaxVertices} min={3} max={64} step={1}
+                  onChange={(e) => { const v = parseInt(e.target.value, 10); if (v >= 3 && v <= 64) setShapeConfig({ randomMaxVertices: v, randomMinVertices: Math.min(v, shapeConfig.randomMinVertices) }); }}
+                  className="input" />
+              </label>
+              <div className="hint-text">Press <kbd>Space</kbd> to generate a new random shape</div>
+            </>
+          )}
         </Section>
       )}
 
@@ -1159,166 +1217,7 @@ export function PropertyPanel() {
         />
       )}
 
-      {hasSelectedPolys && (
-      <Section id="autoGrass" title="Auto Grass" open={openSections.has('autoGrass')} onToggle={toggleSection}>
-        <label className="form-label">
-          Thickness
-          <input
-            type="number"
-            value={autoGrassConfig.thickness}
-            min={0.1}
-            max={10}
-            step={0.1}
-            onChange={(e) => {
-              const val = parseFloat(e.target.value);
-              if (val > 0 && isFinite(val)) {
-                setAutoGrassConfig({ thickness: val });
-              }
-            }}
-            className="input"
-          />
-        </label>
-        <label className="form-label">
-          Max angle
-          <input
-            type="number"
-            value={autoGrassConfig.maxAngle}
-            min={1}
-            max={90}
-            step={1}
-            onChange={(e) => {
-              const val = parseInt(e.target.value, 10);
-              if (val >= 1 && val <= 90 && isFinite(val)) {
-                setAutoGrassConfig({ maxAngle: val });
-              }
-            }}
-            className="input"
-          />
-        </label>
-        <div className="detail-text" style={{ marginTop: 4 }}>
-          Select ground polygons and press T or click Auto Grass to generate grass.
-        </div>
-      </Section>
-      )}
 
-      <Section id="grid" title="Grid" open={openSections.has('grid')} onToggle={toggleSection}>
-        <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <input
-            type="checkbox"
-            checked={grid.visible}
-            onChange={() => setGrid({ visible: !grid.visible })}
-          />
-          Show grid
-        </label>
-        <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <input
-            type="checkbox"
-            checked={grid.enabled}
-            onChange={() => setGrid({ enabled: !grid.enabled })}
-          />
-          Snap to grid
-        </label>
-        <label className="form-label">
-          Step size
-          <input
-            type="number"
-            value={grid.size}
-            min={0.1}
-            max={100}
-            step={0.1}
-            onChange={(e) => {
-              const val = parseFloat(e.target.value);
-              if (val > 0 && isFinite(val)) {
-                setGrid({ size: val });
-              }
-            }}
-            className="input"
-          />
-        </label>
-      </Section>
-
-      <Section id="editorProps" title="Editor Properties" open={openSections.has('editorProps')} onToggle={toggleSection}>
-        <label className="form-label">
-          LGR
-          <select
-            value={selectedLgr}
-            onChange={handleLgrChange}
-            className="select"
-            disabled={lgrLoading}
-          >
-            <option value="Default">Default</option>
-            {lgrList.map((lgr) => (
-              <option key={lgr.LGRIndex} value={lgr.LGRName}>{lgr.LGRName}</option>
-            ))}
-          </select>
-        </label>
-        {lgrLoading && (
-          <div className="detail-text">Loading LGR...</div>
-        )}
-        <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <input type="checkbox" checked={showGrass} onChange={() => setShowGrass(!showGrass)} />
-          Show grass
-        </label>
-        <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <input type="checkbox" checked={showPictures} onChange={() => setShowPictures(!showPictures)} />
-          Show pictures
-        </label>
-        <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <input type="checkbox" checked={showTextures} onChange={() => setShowTextures(!showTextures)} />
-          Show textures
-        </label>
-        <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <input type="checkbox" checked={showObjects} onChange={() => setShowObjects(!showObjects)} />
-          Show objects
-        </label>
-      </Section>
-
-      <Section id="testProps" title="Test Properties" open={openSections.has('testProps')} onToggle={toggleSection}>
-        <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <input type="checkbox" checked={testConfig.showGrass} onChange={() => setTestConfig({ showGrass: !testConfig.showGrass })} />
-          Show grass
-        </label>
-        <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <input type="checkbox" checked={testConfig.showPictures} onChange={() => setTestConfig({ showPictures: !testConfig.showPictures })} />
-          Show pictures
-        </label>
-        <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <input type="checkbox" checked={testConfig.showTextures} onChange={() => setTestConfig({ showTextures: !testConfig.showTextures })} />
-          Show textures
-        </label>
-        <label className="form-label">
-          Alovolt
-          <KeyInput value={testConfig.alovoltKey} onChange={(code) => setTestConfig({ alovoltKey: code })} />
-        </label>
-        <label className="form-label">
-          Left volt
-          <KeyInput value={testConfig.leftVoltKey} onChange={(code) => setTestConfig({ leftVoltKey: code })} />
-        </label>
-        <label className="form-label">
-          Right volt
-          <KeyInput value={testConfig.rightVoltKey} onChange={(code) => setTestConfig({ rightVoltKey: code })} />
-        </label>
-        <label className="form-label">
-          Gas
-          <KeyInput value={testConfig.gasKey} onChange={(code) => setTestConfig({ gasKey: code })} />
-        </label>
-        <label className="form-label">
-          Brake
-          <KeyInput value={testConfig.brakeKey} onChange={(code) => setTestConfig({ brakeKey: code })} />
-        </label>
-        <label className="form-label">
-          Turn
-          <KeyInput value={testConfig.turnKey} onChange={(code) => setTestConfig({ turnKey: code })} />
-        </label>
-        <label className="form-label">
-          Exit
-          <KeyInput value={testConfig.exitKey} onChange={(code) => setTestConfig({ exitKey: code })} />
-        </label>
-        <label className="form-label">
-          Restart
-          <KeyInput value={testConfig.restartKey} onChange={(code) => setTestConfig({ restartKey: code })} />
-        </label>
-      </Section>
-    </>
+</>
   );
 }

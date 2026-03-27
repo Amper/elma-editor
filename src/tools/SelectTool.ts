@@ -12,15 +12,18 @@ import {
   hitTest,
   computeBBox,
   distance,
+  distanceToSegment,
+  pointInPolygon,
   rotatePoint,
   scalePoint,
   angleBetween,
 } from '@/utils/geometry';
+import { snapToGrid } from '@/utils/snap';
 import { OBJECT_RADIUS } from 'elmajs';
 import { getTheme, withAlpha } from '@/canvas/themeColors';
 import { getEditorLgr } from '@/canvas/lgrCache';
 
-type SelectState = 'idle' | 'moving' | 'rubber-band' | 'resizing' | 'rotating';
+type SelectState = 'idle' | 'moving' | 'rubber-band' | 'resizing' | 'rotating' | 'vertex-editing';
 
 export class SelectTool implements EditorTool {
   private state: SelectState = 'idle';
@@ -53,6 +56,18 @@ export class SelectTool implements EditorTool {
   private rotationCenter: Vec2 = { x: 0, y: 0 };
   private rotationStartPos: Vec2 = { x: 0, y: 0 };
 
+  // ── Double-click detection ──
+  private lastClickTime: number = 0;
+  private lastClickPos: Vec2 = { x: 0, y: 0 };
+
+  // ── Vertex editing sub-mode ──
+  private vePolyIdx: number = -1;
+  private veSelected: Set<number> = new Set();
+  private veHover: HitTestResult = { kind: 'none' };
+  private veMoving: boolean = false;
+  private veMoveStart: Vec2 = { x: 0, y: 0 };
+  private veMoveOriginals: Array<{ vertIdx: number; pos: Vec2 }> = [];
+
   constructor(private getStore: () => EditorState) {}
 
   activate() {
@@ -60,16 +75,32 @@ export class SelectTool implements EditorTool {
     this.hoveredHit = { kind: 'none' };
     this.hoveredFrameHit = { kind: 'none' };
     this.frame = null;
+    this.vePolyIdx = -1;
+    this.veSelected = new Set();
+    this.veHover = { kind: 'none' };
+    this.veMoving = false;
+    const store = this.getStore();
+    store.setSelectVertexEditing(false);
+    store.setToggleSelectVertexEditing(() => this.handleToggleVertexEditing());
   }
 
   deactivate() {
     if (this.state === 'moving' || this.state === 'resizing' || this.state === 'rotating') {
       this.getStore().endUndoBatch();
     }
+    if (this.state === 'vertex-editing' && this.veMoving) {
+      this.getStore().endUndoBatch();
+    }
     this.state = 'idle';
     this.hoveredHit = { kind: 'none' };
     this.hoveredFrameHit = { kind: 'none' };
     this.frame = null;
+    this.vePolyIdx = -1;
+    this.veSelected = new Set();
+    this.veMoving = false;
+    const store = this.getStore();
+    store.setSelectVertexEditing(false);
+    store.setToggleSelectVertexEditing(null);
   }
 
   // ── Pointer Events ─────────────────────────────────────────────────────────
@@ -79,7 +110,21 @@ export class SelectTool implements EditorTool {
     const store = this.getStore();
     if (!store.level) return;
 
+    // ── Double-click detection ──
+    const now = performance.now();
+    const isDoubleClick =
+      now - this.lastClickTime < 400 &&
+      distance(e.screenPos, this.lastClickPos) < 5;
+    this.lastClickTime = now;
+    this.lastClickPos = e.screenPos;
+
     const zoom = store.viewport.zoom;
+
+    // ── Vertex editing sub-mode ──
+    if (this.state === 'vertex-editing') {
+      this.onPointerDownVertexEdit(e, store, isDoubleClick);
+      return;
+    }
 
     // 1. If transform frame is visible, check frame handles first
     if (this.frame) {
@@ -119,6 +164,12 @@ export class SelectTool implements EditorTool {
       store.level.pictures,
       vis,
     );
+
+    // Double-click on polygon → enter vertex editing
+    if (isDoubleClick && (hit.kind === 'vertex' || hit.kind === 'edge' || hit.kind === 'polygon')) {
+      this.enterVertexEditing(hit.polygonIndex, store);
+      return;
+    }
 
     if (hit.kind === 'vertex' || hit.kind === 'edge') {
       // Select tool works with whole polygons — treat vertex/edge hits as polygon hits
@@ -178,6 +229,11 @@ export class SelectTool implements EditorTool {
 
   onPointerMove(e: CanvasPointerEvent) {
     const store = this.getStore();
+
+    if (this.state === 'vertex-editing') {
+      this.onPointerMoveVertexEdit(e, store);
+      return;
+    }
 
     if (this.state === 'moving') {
       const dx = e.worldPos.x - this.moveStartWorld.x;
@@ -255,6 +311,14 @@ export class SelectTool implements EditorTool {
   onPointerUp(e: CanvasPointerEvent) {
     if (e.button !== 0) return;
 
+    if (this.state === 'vertex-editing') {
+      if (this.veMoving) {
+        this.getStore().endUndoBatch();
+        this.veMoving = false;
+      }
+      return;
+    }
+
     if (this.state === 'moving' || this.state === 'resizing' || this.state === 'rotating') {
       this.getStore().endUndoBatch();
     } else if (this.state === 'rubber-band') {
@@ -267,6 +331,23 @@ export class SelectTool implements EditorTool {
   // ── Keyboard Events ────────────────────────────────────────────────────────
 
   onKeyDown(e: KeyboardEvent) {
+    if (this.state === 'vertex-editing') {
+      if (e.key === 'Escape') {
+        this.exitVertexEditing();
+      } else if (e.key === 'Delete' || e.key === 'Backspace') {
+        this.deleteVertexEditVertices();
+      } else if (
+        e.key === 'ArrowUp' ||
+        e.key === 'ArrowDown' ||
+        e.key === 'ArrowLeft' ||
+        e.key === 'ArrowRight'
+      ) {
+        e.preventDefault();
+        this.nudgeVertexEditSelection(e.key, e.shiftKey);
+      }
+      return;
+    }
+
     if (e.key === 'Delete' || e.key === 'Backspace') {
       this.deleteSelected();
     } else if (e.key === 'm' || e.key === 'M') {
@@ -299,6 +380,11 @@ export class SelectTool implements EditorTool {
     const store = this.getStore();
     const zoom = store.viewport.zoom;
 
+    if (this.state === 'vertex-editing') {
+      this.renderVertexEditingOverlay(ctx, store, zoom);
+      return;
+    }
+
     // Hover highlight when idle
     if (this.state === 'idle') {
       this.renderHoverHighlight(ctx, store, zoom);
@@ -326,6 +412,15 @@ export class SelectTool implements EditorTool {
   // ── Cursor ─────────────────────────────────────────────────────────────────
 
   getCursor() {
+    if (this.state === 'vertex-editing') {
+      if (this.veMoving) return 'move';
+      if (this.veHover.kind === 'vertex') {
+        return this.veSelected.has(this.veHover.vertexIndex) ? 'move' : 'pointer';
+      }
+      if (this.veHover.kind === 'edge') return 'pointer';
+      return 'default';
+    }
+
     if (this.state === 'moving') return 'move';
     if (this.state === 'resizing') return this.getResizeCursor(this.resizeHandle!);
     if (this.state === 'rotating') return 'grabbing';
@@ -928,6 +1023,318 @@ export class SelectTool implements EditorTool {
     }
     if (sel.polygonIndices.size > 0) {
       store.removePolygons([...sel.polygonIndices]);
+    }
+  }
+
+  // ── Vertex Editing Sub-Mode ──────────────────────────────────────────────
+
+  private enterVertexEditing(polyIdx: number, store: EditorState) {
+    this.state = 'vertex-editing';
+    this.vePolyIdx = polyIdx;
+    this.veSelected = new Set();
+    this.veHover = { kind: 'none' };
+    this.veMoving = false;
+    this.frame = null;
+
+    // Keep polygon selected in the store
+    const sel = this.emptySelection();
+    sel.polygonIndices.add(polyIdx);
+    const poly = store.level?.polygons[polyIdx];
+    if (poly) {
+      sel.vertexIndices.set(polyIdx, new Set(poly.vertices.map((_, i) => i)));
+    }
+    store.setSelection(sel);
+    store.setSelectVertexEditing(true);
+  }
+
+  private exitVertexEditing() {
+    if (this.veMoving) {
+      this.getStore().endUndoBatch();
+    }
+    this.state = 'idle';
+    this.vePolyIdx = -1;
+    this.veSelected = new Set();
+    this.veHover = { kind: 'none' };
+    this.veMoving = false;
+    this.getStore().setSelectVertexEditing(false);
+  }
+
+  private handleToggleVertexEditing() {
+    const store = this.getStore();
+    if (this.state === 'vertex-editing') {
+      this.exitVertexEditing();
+    } else if (this.state === 'idle' && store.selection.polygonIndices.size === 1) {
+      const polyIdx = [...store.selection.polygonIndices][0]!;
+      this.enterVertexEditing(polyIdx, store);
+    }
+  }
+
+  private hitTestSinglePolygon(worldPos: Vec2, captureRadius: number): HitTestResult {
+    const store = this.getStore();
+    if (!store.level || this.vePolyIdx < 0) return { kind: 'none' };
+
+    const poly = store.level.polygons[this.vePolyIdx];
+    if (!poly) return { kind: 'none' };
+
+    const pi = this.vePolyIdx;
+
+    // Check vertices first (highest priority)
+    let bestDist = captureRadius;
+    let best: HitTestResult = { kind: 'none' };
+
+    for (let vi = 0; vi < poly.vertices.length; vi++) {
+      const v = poly.vertices[vi]!;
+      const d = distance(worldPos, v);
+      if (d < bestDist) {
+        bestDist = d;
+        best = { kind: 'vertex', polygonIndex: pi, vertexIndex: vi, position: { x: v.x, y: v.y } };
+      }
+    }
+    if (best.kind !== 'none') return best;
+
+    // Check edges
+    bestDist = captureRadius;
+    for (let ei = 0; ei < poly.vertices.length; ei++) {
+      const a = poly.vertices[ei]!;
+      const b = poly.vertices[(ei + 1) % poly.vertices.length]!;
+      const { dist, t } = distanceToSegment(worldPos, a, b);
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = {
+          kind: 'edge',
+          polygonIndex: pi,
+          edgeIndex: ei,
+          position: { x: a.x + t * (b.x - a.x), y: a.y + t * (b.y - a.y) },
+          t,
+        };
+      }
+    }
+
+    return best;
+  }
+
+  private onPointerDownVertexEdit(e: CanvasPointerEvent, store: EditorState, isDoubleClick: boolean) {
+    if (!store.level) return;
+
+    const poly = store.level.polygons[this.vePolyIdx];
+    if (!poly) {
+      this.exitVertexEditing();
+      return;
+    }
+
+    // Double-click on a different polygon → switch to editing that one
+    if (isDoubleClick) {
+      const captureRadius = 10 / store.viewport.zoom;
+      const vis = { showGrass: store.showGrass, showObjects: store.showObjects, showPictures: store.showPictures, showTextures: store.showTextures };
+      const globalHit = hitTest(e.worldPos, store.level.polygons, store.level.objects, captureRadius, store.level.pictures, vis);
+      if ((globalHit.kind === 'vertex' || globalHit.kind === 'edge' || globalHit.kind === 'polygon') && globalHit.polygonIndex !== this.vePolyIdx) {
+        this.enterVertexEditing(globalHit.polygonIndex, store);
+        return;
+      }
+    }
+
+    const captureRadius = 10 / store.viewport.zoom;
+    const hit = this.hitTestSinglePolygon(e.worldPos, captureRadius);
+
+    if (hit.kind === 'vertex') {
+      const isAlreadySelected = this.veSelected.has(hit.vertexIndex);
+      if (e.shiftKey) {
+        if (isAlreadySelected) this.veSelected.delete(hit.vertexIndex);
+        else this.veSelected.add(hit.vertexIndex);
+      } else if (isAlreadySelected) {
+        this.startVertexEditMove(e.worldPos, store);
+      } else {
+        this.veSelected = new Set([hit.vertexIndex]);
+        this.startVertexEditMove(e.worldPos, store);
+      }
+    } else if (hit.kind === 'edge') {
+      const insertIdx = hit.edgeIndex + 1;
+      store.insertVertex(this.vePolyIdx, insertIdx, e.worldPos);
+      // Shift selected indices after insertion point
+      const shifted = new Set<number>();
+      for (const vi of this.veSelected) {
+        shifted.add(vi >= insertIdx ? vi + 1 : vi);
+      }
+      this.veSelected = new Set([insertIdx]);
+      this.startVertexEditMove(e.worldPos, this.getStore());
+    } else {
+      // No vertex/edge hit — check if click is inside the polygon
+      if (pointInPolygon(e.worldPos, poly.vertices)) {
+        this.veSelected = new Set();
+      } else {
+        this.exitVertexEditing();
+      }
+    }
+  }
+
+  private onPointerMoveVertexEdit(e: CanvasPointerEvent, store: EditorState) {
+    if (!store.level) return;
+
+    const poly = store.level.polygons[this.vePolyIdx];
+    if (!poly) {
+      this.exitVertexEditing();
+      return;
+    }
+
+    if (this.veMoving) {
+      const dx = e.worldPos.x - this.veMoveStart.x;
+      const dy = e.worldPos.y - this.veMoveStart.y;
+      const pi = this.vePolyIdx;
+
+      if (this.veMoveOriginals.length > 0) {
+        const first = this.veMoveOriginals[0]!;
+        const rawPos = { x: first.pos.x + dx, y: first.pos.y + dy };
+        const snapped = snapToGrid(rawPos, store.grid);
+        const snapDx = snapped.x - first.pos.x;
+        const snapDy = snapped.y - first.pos.y;
+
+        store.moveVertices(
+          this.veMoveOriginals.map((v) => ({
+            polyIdx: pi,
+            vertIdx: v.vertIdx,
+            newPos: { x: v.pos.x + snapDx, y: v.pos.y + snapDy },
+          })),
+        );
+      }
+    } else {
+      const captureRadius = 10 / store.viewport.zoom;
+      this.veHover = this.hitTestSinglePolygon(e.worldPos, captureRadius);
+    }
+  }
+
+  private startVertexEditMove(worldPos: Vec2, store: EditorState) {
+    const level = store.level!;
+    const poly = level.polygons[this.vePolyIdx];
+    if (!poly) return;
+
+    store.beginUndoBatch();
+    this.veMoving = true;
+    this.veMoveStart = worldPos;
+    this.veMoveOriginals = [];
+    for (const vi of this.veSelected) {
+      const v = poly.vertices[vi];
+      if (v) this.veMoveOriginals.push({ vertIdx: vi, pos: { x: v.x, y: v.y } });
+    }
+  }
+
+  private deleteVertexEditVertices() {
+    const store = this.getStore();
+    if (!store.level || this.vePolyIdx < 0) return;
+    if (this.veSelected.size === 0) return;
+
+    const poly = store.level.polygons[this.vePolyIdx];
+    if (!poly) return;
+
+    // Enforce 3-vertex minimum
+    if (poly.vertices.length - this.veSelected.size < 3) return;
+
+    const vertsToRemove = new Map<number, Set<number>>();
+    vertsToRemove.set(this.vePolyIdx, new Set(this.veSelected));
+    store.removeVertices(vertsToRemove);
+    this.veSelected = new Set();
+  }
+
+  private nudgeVertexEditSelection(key: string, shift: boolean) {
+    const store = this.getStore();
+    if (!store.level || this.vePolyIdx < 0) return;
+
+    const MAJOR_EVERY = 5;
+    const step = shift ? store.grid.size * MAJOR_EVERY : store.grid.size;
+
+    let dx = 0;
+    let dy = 0;
+    if (key === 'ArrowLeft') dx = -step;
+    else if (key === 'ArrowRight') dx = step;
+    else if (key === 'ArrowUp') dy = -step;
+    else if (key === 'ArrowDown') dy = step;
+
+    const pi = this.vePolyIdx;
+    const poly = store.level.polygons[pi];
+    if (!poly) return;
+
+    const moves: Array<{ polyIdx: number; vertIdx: number; newPos: Vec2 }> = [];
+    for (const vi of this.veSelected) {
+      const v = poly.vertices[vi];
+      if (v) moves.push({ polyIdx: pi, vertIdx: vi, newPos: { x: v.x + dx, y: v.y + dy } });
+    }
+
+    if (moves.length > 0) store.moveVertices(moves);
+  }
+
+  private renderVertexEditingOverlay(
+    ctx: CanvasRenderingContext2D,
+    store: EditorState,
+    zoom: number,
+  ) {
+    if (this.vePolyIdx < 0 || !store.level) return;
+    const poly = store.level.polygons[this.vePolyIdx];
+    if (!poly || poly.vertices.length < 2) return;
+
+    const t = getTheme();
+    const radius = 5 / zoom;
+    const edgeDotRadius = 3 / zoom;
+
+    // 1. Polygon outline with subtle fill
+    ctx.beginPath();
+    ctx.moveTo(poly.vertices[0]!.x, poly.vertices[0]!.y);
+    for (let i = 1; i < poly.vertices.length; i++) {
+      ctx.lineTo(poly.vertices[i]!.x, poly.vertices[i]!.y);
+    }
+    ctx.closePath();
+    ctx.fillStyle = withAlpha(t.selection, 0.05);
+    ctx.fill();
+    ctx.strokeStyle = withAlpha(t.selection, 0.4);
+    ctx.lineWidth = 1.5 / zoom;
+    ctx.stroke();
+
+    // 2. Unselected vertices — outlined circles
+    for (let vi = 0; vi < poly.vertices.length; vi++) {
+      if (this.veSelected.has(vi)) continue;
+      const v = poly.vertices[vi]!;
+      ctx.beginPath();
+      ctx.arc(v.x, v.y, radius, 0, Math.PI * 2);
+      ctx.fillStyle = withAlpha(t.handle, 0.7);
+      ctx.fill();
+      ctx.strokeStyle = withAlpha(t.toolVertexHover, 0.8);
+      ctx.lineWidth = 1.5 / zoom;
+      ctx.stroke();
+    }
+
+    // 3. Selected vertices — filled circles with thicker border
+    for (const vi of this.veSelected) {
+      const v = poly.vertices[vi];
+      if (!v) continue;
+      ctx.beginPath();
+      ctx.arc(v.x, v.y, radius, 0, Math.PI * 2);
+      ctx.fillStyle = t.toolVertexActive;
+      ctx.fill();
+      ctx.strokeStyle = t.toolPrimary;
+      ctx.lineWidth = 2.5 / zoom;
+      ctx.stroke();
+    }
+
+    // 4. Hover highlight (idle only)
+    if (!this.veMoving) {
+      if (this.veHover.kind === 'vertex') {
+        const { position } = this.veHover;
+        const isSelected = this.veSelected.has(this.veHover.vertexIndex);
+        ctx.beginPath();
+        ctx.arc(position.x, position.y, radius + 2 / zoom, 0, Math.PI * 2);
+        ctx.strokeStyle = isSelected
+          ? withAlpha(t.toolVertexActive, 0.8)
+          : t.toolVertexHover;
+        ctx.lineWidth = 2 / zoom;
+        ctx.stroke();
+      } else if (this.veHover.kind === 'edge') {
+        const { position } = this.veHover;
+        ctx.beginPath();
+        ctx.arc(position.x, position.y, edgeDotRadius, 0, Math.PI * 2);
+        ctx.fillStyle = withAlpha(t.toolVertexHover, 0.8);
+        ctx.fill();
+        ctx.strokeStyle = t.toolPrimary;
+        ctx.lineWidth = 1 / zoom;
+        ctx.stroke();
+      }
     }
   }
 

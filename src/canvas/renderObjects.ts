@@ -104,7 +104,28 @@ function drawCircleFallback(
   ctx.stroke();
 }
 
-function getSpriteForType(type: number, lgrAssets: LgrEditorAssets): ImageBitmap | null {
+/** Animation rate: ~30 fps matching original game display rate. */
+const ANIM_FPS = 30;
+
+function getSpriteForType(type: number, lgrAssets: LgrEditorAssets, animationTime?: number): ImageBitmap | null {
+  if (animationTime !== undefined) {
+    const frameIndex = Math.floor((animationTime / 1000) * ANIM_FPS);
+    switch (type) {
+      case ObjectType.Exit: {
+        const frames = lgrAssets.sprites.exitFrames;
+        return frames.length > 0 ? frames[((frameIndex % frames.length) + frames.length) % frames.length]! : null;
+      }
+      case ObjectType.Apple: {
+        const frames = lgrAssets.sprites.foodFrames;
+        return frames.length > 0 ? frames[((frameIndex % frames.length) + frames.length) % frames.length]! : null;
+      }
+      case ObjectType.Killer: {
+        const frames = lgrAssets.sprites.killerFrames;
+        return frames.length > 0 ? frames[((frameIndex % frames.length) + frames.length) % frames.length]! : null;
+      }
+      default: return null;
+    }
+  }
   switch (type) {
     case ObjectType.Exit: return lgrAssets.sprites.exit;
     case ObjectType.Apple: return lgrAssets.sprites.food;
@@ -117,6 +138,7 @@ export function renderObjects(
   ctx: CanvasRenderingContext2D,
   objects: ElmaObject[],
   lgrAssets?: LgrEditorAssets | null,
+  animationTime?: number,
 ): void {
   const t = getTheme();
 
@@ -134,7 +156,7 @@ export function renderObjects(
       continue;
     }
 
-    const sprite = lgrAssets ? getSpriteForType(obj.type, lgrAssets) : null;
+    const sprite = lgrAssets ? getSpriteForType(obj.type, lgrAssets, animationTime) : null;
 
     if (sprite) {
       const half = OBJECT_WORLD_SIZE / 2;

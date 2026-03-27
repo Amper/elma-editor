@@ -1,0 +1,108 @@
+.command-palette-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 500;
+}
+
+.command-palette {
+  position: fixed;
+  top: 20%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(520px, 90vw);
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  z-index: 501;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.command-palette__input {
+  width: 100%;
+  padding: var(--space-lg) var(--space-xl);
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text-primary);
+  font-size: 14px;
+  font-family: inherit;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.command-palette__input::placeholder {
+  color: var(--color-text-secondary);
+}
+
+.command-palette__list {
+  max-height: min(400px, 60vh);
+  overflow-y: auto;
+  padding: var(--space-sm) 0;
+}
+
+.command-palette__category {
+  padding: var(--space-sm) var(--space-xl);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-secondary);
+  user-select: none;
+}
+
+.command-palette__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-sm) var(--space-xl);
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--color-text-primary);
+  user-select: none;
+}
+
+.command-palette__item:hover {
+  background: var(--color-bg-hover);
+}
+
+.command-palette__item--selected {
+  background: var(--color-bg-active);
+}
+
+.command-palette__item--disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.command-palette__item-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.command-palette__item-label mark {
+  color: var(--color-accent);
+  background: none;
+  font-weight: inherit;
+}
+
+.command-palette__shortcut {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  background: rgba(255, 255, 255, 0.08);
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+
+.command-palette__empty {
+  padding: var(--space-xl);
+  text-align: center;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+}

@@ -1,21 +1,21 @@
 .app-layout {
   display: grid;
   grid-template-rows: var(--menubar-height) 1fr var(--statusbar-height);
-  grid-template-columns: auto 240px 1fr;
+  grid-template-columns: auto 1fr;
   height: 100vh;
   width: 100vw;
 }
 
 .app-layout--testing {
   grid-template-rows: 0 1fr;
-  grid-template-columns: 0 0 1fr;
+  grid-template-columns: 0 1fr;
 }
 
 .menu-bar {
   grid-column: 1 / -1;
   display: flex;
   align-items: center;
-  padding: 0 var(--space-lg);
+  padding: var(--space-xs) var(--space-lg);
   background: var(--color-bg-tertiary);
   border-bottom: 1px solid var(--color-border);
   font-weight: 600;
@@ -26,6 +26,7 @@
 .toolbar {
   grid-row: 2;
   grid-column: 1;
+  position: relative;
   background: var(--color-bg-secondary);
   border-right: 1px solid var(--color-border);
   display: flex;
@@ -34,17 +35,169 @@
   gap: var(--space-xs);
 }
 
+.toolbar__spacer {
+  flex: 1;
+}
+
+.settings-panel {
+  position: absolute;
+  top: 0;
+  left: calc(100% + 1px);
+  width: 240px;
+  height: 100%;
+  z-index: 150;
+  background: var(--color-bg-secondary);
+  border-right: 1px solid var(--color-border);
+  overflow-y: auto;
+  padding: var(--space-lg);
+}
+
+.settings-panel-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 149;
+}
+
+/* ── Toolbar context menu ── */
+.toolbar-context-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 199;
+}
+
+.toolbar-context-menu {
+  position: fixed;
+  z-index: 200;
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  padding: 4px 0;
+  min-width: 180px;
+}
+
+.toolbar-context-menu__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 12px;
+  border: none;
+  background: none;
+  color: var(--color-text-primary);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.toolbar-context-menu__item:hover {
+  background: var(--color-bg-hover);
+}
+
+.toolbar-context-menu__item:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.toolbar-context-menu__check {
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.toolbar-context-menu__label {
+  flex: 1;
+}
+
+.toolbar-context-menu__shortcut {
+  color: var(--color-text-secondary);
+  font-size: 11px;
+  margin-left: auto;
+}
+
+.toolbar-context-menu__divider {
+  height: 1px;
+  background: var(--color-border);
+  margin: 4px 0;
+}
+
+/* ── Canvas context menu ── */
+.canvas-context-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 199;
+}
+
+.canvas-context-menu {
+  position: fixed;
+  z-index: 200;
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  padding: 4px 0;
+  min-width: 200px;
+}
+
+.canvas-context-menu__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 12px;
+  border: none;
+  background: none;
+  color: var(--color-text-primary);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.canvas-context-menu__item:hover:not(:disabled) {
+  background: var(--color-bg-hover);
+}
+
+.canvas-context-menu__item:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.canvas-context-menu__label {
+  flex: 1;
+}
+
+.canvas-context-menu__shortcut {
+  color: var(--color-text-secondary);
+  font-size: 11px;
+  margin-left: auto;
+}
+
+.canvas-context-menu__divider {
+  height: 1px;
+  background: var(--color-border);
+  margin: 4px 0;
+}
+
 .canvas-area {
   grid-row: 2;
-  grid-column: 3;
+  grid-column: 2;
   overflow: hidden;
   position: relative;
   background: var(--color-canvas-bg);
 }
 
 .prop-panel {
-  grid-row: 2;
-  grid-column: 2;
+  position: absolute;
+  top: 0;
+  left: calc(100% + 1px);
+  width: 240px;
+  height: 100%;
+  z-index: 140;
   background: var(--color-bg-secondary);
   border-right: 1px solid var(--color-border);
   overflow-y: auto;
@@ -53,6 +206,7 @@
 
 .status-bar {
   grid-column: 1 / -1;
+  grid-row: 3;
   display: flex;
   align-items: center;
   padding: 0 var(--space-lg);
@@ -60,61 +214,6 @@
   background: var(--color-status-bg);
   color: #fff;
   font-size: 12px;
-}
-
-/* ── Start page ── */
-.start-page {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  background: var(--color-canvas-bg);
-  z-index: 1;
-}
-
-.start-page__title {
-  font-size: 24px;
-  font-weight: 700;
-  color: var(--color-text-primary);
-  letter-spacing: 0.02em;
-}
-
-.start-page__subtitle {
-  font-size: 14px;
-  color: var(--color-text-secondary);
-  margin-bottom: 8px;
-}
-
-.start-page__actions {
-  display: flex;
-  gap: 12px;
-}
-
-.start-page__btn {
-  padding: 8px 20px;
-  font-size: 13px;
-  font-weight: 600;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--color-border);
-  background: var(--color-bg-secondary);
-  color: var(--color-text-primary);
-  cursor: pointer;
-}
-
-.start-page__btn:hover {
-  background: var(--color-bg-hover);
-  border-color: var(--color-accent);
-  color: var(--color-accent);
-}
-
-.start-page__hint {
-  font-size: 12px;
-  color: var(--color-text-secondary);
-  opacity: 0.6;
-  margin-top: 4px;
 }
 
 /* ── Menu bar extras ── */
@@ -161,10 +260,6 @@
 @media (max-width: 1023px) {
   :root {
     --menubar-height: 40px;
-  }
-
-  .app-layout {
-    grid-template-columns: auto 1fr;
   }
 
   .brand {
@@ -232,6 +327,16 @@
     display: flex;
   }
 
+  /* Settings panel → fixed drawer on phone */
+  .settings-panel {
+    position: fixed;
+    top: var(--menubar-height);
+    left: 0;
+    width: min(300px, 80vw);
+    height: auto;
+    bottom: 56px;
+  }
+
   /* Toolbar → horizontal bottom strip */
   .toolbar {
     grid-row: 3;
@@ -254,12 +359,4 @@
     display: none;
   }
 
-  /* Start page adjustments */
-  .start-page__title {
-    font-size: 20px;
-  }
-
-  .start-page__btn {
-    padding: 10px 20px;
-  }
 }

@@ -9,15 +9,19 @@ import {
   type ObjectPlacementConfig,
   type PicturePlacementConfig,
   type MaskPlacementConfig,
+  type ShapeConfig,
   type TopologyError,
   type Vec2,
+  type ButtonViewMode,
+  type ButtonSize,
+  type ToolbarItemConfig,
 } from '@/types';
 import { fitLevel } from '@/canvas/viewport';
 import { validateTopology } from '@/utils/topology';
 import { mergePolygons } from '@/utils/mergePolygons';
 import { splitPolygons, selfSplitPolygon } from '@/utils/splitPolygons';
 import { autoGrassPolygon, type AutoGrassConfig } from '@/utils/autoGrass';
-import { pointInPolygon, computeSignedArea } from '@/utils/geometry';
+import { pointInPolygon, computeSignedArea, computeBBox } from '@/utils/geometry';
 import { generateId } from '@/utils/generateId';
 
 // ── Test config ──────────────────────────────────────────────────────────────
@@ -26,6 +30,7 @@ export interface TestConfig {
   showGrass: boolean;
   showPictures: boolean;
   showTextures: boolean;
+  objectsAnimation: boolean;
   gasKey: string;
   brakeKey: string;
   turnKey: string;
@@ -40,6 +45,7 @@ export const DEFAULT_TEST_CONFIG: TestConfig = {
   showGrass: true,
   showPictures: true,
   showTextures: true,
+  objectsAnimation: true,
   gasKey: 'ArrowUp',
   brakeKey: 'ArrowDown',
   turnKey: 'Space',
@@ -49,6 +55,38 @@ export const DEFAULT_TEST_CONFIG: TestConfig = {
   exitKey: 'Escape',
   restartKey: 'F5',
 };
+
+// ── Default toolbar config ───────────────────────────────────────────────────
+
+export const DEFAULT_TOOLBAR_CONFIG: ToolbarItemConfig[] = [
+  { id: ToolId.Select, visible: true },
+  { id: ToolId.DrawPolygon, visible: true },
+  { id: ToolId.DrawGrass, visible: true },
+  { id: ToolId.Vertex, visible: true },
+  { id: ToolId.DrawObject, visible: true },
+  { id: ToolId.Shape, visible: true },
+  { id: ToolId.DrawPicture, visible: true },
+  { id: ToolId.DrawMask, visible: true },
+  { id: ToolId.Pipe, visible: true },
+  { id: ToolId.Pan, visible: true },
+  { id: ToolId.ImageImport, visible: true },
+  { id: ToolId.Text, visible: true },
+];
+
+/** Reconcile saved toolbar config with current tool list (handles version drift). */
+function reconcileToolbarConfig(saved: ToolbarItemConfig[]): ToolbarItemConfig[] {
+  const allToolIds = new Set(DEFAULT_TOOLBAR_CONFIG.map(t => t.id));
+  const savedIds = new Set(saved.map(t => t.id));
+  // Keep only items that still exist
+  const result = saved.filter(t => allToolIds.has(t.id));
+  // Append any new tools not in saved config
+  for (const def of DEFAULT_TOOLBAR_CONFIG) {
+    if (!savedIds.has(def.id)) {
+      result.push({ ...def });
+    }
+  }
+  return result;
+}
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -127,6 +165,40 @@ function emptySelection(): SelectionState {
   };
 }
 
+/** Extract selected polygons, objects and pictures as plain serializable data. */
+export function extractSelectionData(level: Level, selection: SelectionState) {
+  const polygons = [...selection.polygonIndices].map((i) => {
+    const p = level.polygons[i]!;
+    return {
+      grass: p.grass,
+      vertices: p.vertices.map((v) => ({ x: v.x, y: v.y })),
+    };
+  });
+  const objects = [...selection.objectIndices].map((i) => {
+    const o = level.objects[i]!;
+    return {
+      x: o.position.x,
+      y: o.position.y,
+      type: o.type,
+      gravity: o.gravity,
+      animation: o.animation,
+    };
+  });
+  const pictures = [...selection.pictureIndices].map((i) => {
+    const p = level.pictures[i]!;
+    return {
+      x: p.position.x,
+      y: p.position.y,
+      name: p.name,
+      texture: p.texture,
+      mask: p.mask,
+      clip: p.clip,
+      distance: p.distance,
+    };
+  });
+  return { polygons, objects, pictures };
+}
+
 // ── Store types ──────────────────────────────────────────────────────────────
 
 export interface EditorState {
@@ -136,6 +208,7 @@ export interface EditorState {
 
   // Editor UI state (NOT tracked by undo/redo)
   activeTool: ToolId;
+  toolPanelCollapsed: boolean;
   viewport: ViewportState;
   grid: GridConfig;
   selection: SelectionState;
@@ -150,8 +223,8 @@ export interface EditorState {
   pipeRadius: number;
   /** Pipe tool: use rounded corners at bends. */
   pipeRoundCorners: boolean;
-  /** Shape tool: number of sides for the regular polygon. */
-  shapeSides: number;
+  /** Shape tool configuration. */
+  shapeConfig: ShapeConfig;
   /** Image import tool configuration. */
   imageImportConfig: {
     threshold: number;
@@ -190,6 +263,7 @@ export interface EditorState {
   showPictures: boolean;
   showTextures: boolean;
   showObjects: boolean;
+  objectsAnimation: boolean;
   /** Name of the currently selected LGR ("Default" for the local file). */
   selectedLgr: string;
   /** Whether an LGR is currently being downloaded/parsed. */
@@ -198,9 +272,52 @@ export interface EditorState {
   testConfig: TestConfig;
   /** Show the validation error panel. */
   showValidationPanel: boolean;
+  /** Whether the select tool is in vertex-editing sub-mode. */
+  selectVertexEditing: boolean;
+  setSelectVertexEditing: (editing: boolean) => void;
+  /** Callback to toggle vertex editing from UI (set by SelectTool). */
+  toggleSelectVertexEditing: (() => void) | null;
+  setToggleSelectVertexEditing: (fn: (() => void) | null) => void;
   /** Show the property panel drawer (mobile/tablet). */
   showPropPanel: boolean;
   setShowPropPanel: (show: boolean) => void;
+  /** Show the properties panel (level/editor/test props). */
+  showPropertiesPanel: boolean;
+  setShowPropertiesPanel: (show: boolean) => void;
+  /** Show the full-screen Level screen. */
+  showLevelScreen: boolean;
+  setShowLevelScreen: (show: boolean) => void;
+
+  // ── Interface settings ──
+  /** Whether the top actions bar is visible. */
+  showActionsBar: boolean;
+  setShowActionsBar: (show: boolean) => void;
+  /** Button display mode for the side toolbar. */
+  toolbarViewMode: ButtonViewMode;
+  setToolbarViewMode: (mode: ButtonViewMode) => void;
+  /** Button display mode for the top actions bar. */
+  actionsBarViewMode: ButtonViewMode;
+  setActionsBarViewMode: (mode: ButtonViewMode) => void;
+  /** Button size for the side toolbar. */
+  toolbarButtonSize: ButtonSize;
+  setToolbarButtonSize: (size: ButtonSize) => void;
+  /** Button size for the top actions bar. */
+  actionsBarButtonSize: ButtonSize;
+  setActionsBarButtonSize: (size: ButtonSize) => void;
+  /** Toolbar tool order and visibility config. */
+  toolbarConfig: ToolbarItemConfig[];
+  setToolbarItemVisibility: (id: ToolId, visible: boolean) => void;
+  reorderToolbarItem: (fromIndex: number, toIndex: number) => void;
+  resetToolbarConfig: () => void;
+  /** Whether the status bar is visible. */
+  showStatusBar: boolean;
+  setShowStatusBar: (show: boolean) => void;
+  /** Whether the minimap overlay is visible. */
+  showMinimap: boolean;
+  setShowMinimap: (show: boolean) => void;
+  /** Minimap opacity (0–100). */
+  minimapOpacity: number;
+  setMinimapOpacity: (value: number) => void;
 
   // ── Level I/O ──
   loadLevel: (level: Level, fileName: string) => void;
@@ -236,7 +353,7 @@ export interface EditorState {
   setPipeRoundCorners: (round: boolean) => void;
 
   // ── Shape config ──
-  setShapeSides: (sides: number) => void;
+  setShapeConfig: (config: Partial<ShapeConfig>) => void;
 
   // ── Image import config ──
   setImageImportConfig: (config: Partial<EditorState['imageImportConfig']>) => void;
@@ -256,6 +373,9 @@ export interface EditorState {
   copySelection: () => void;
   cutSelection: () => void;
   pasteClipboard: () => void;
+
+  // ── Library ──
+  placeFromLibrary: (item: { polygons: Array<{ grass: boolean; vertices: Vec2[] }>; objects: Array<{ x: number; y: number; type: ObjectType; gravity: Gravity; animation: number }>; pictures: Array<{ x: number; y: number; name: string; texture: string; mask: string; clip: Clip; distance: number }> }) => void;
 
   // ── Level mutations (each creates an undo snapshot) ──
   addPolygon: (data: { grass: boolean; vertices: Vec2[] }) => void;
@@ -286,10 +406,13 @@ export interface EditorState {
   setLevelName: (name: string) => void;
   setLevelGround: (ground: string) => void;
   setLevelSky: (sky: string) => void;
+  setLevelLgr: (lgr: string) => void;
   setFileName: (fileName: string) => void;
   mergeSelectedPolygons: () => void;
   splitSelectedPolygons: () => void;
   autoGrassSelectedPolygons: () => void;
+  mirrorHorizontally: () => void;
+  mirrorVertically: () => void;
 
   // ── Topology ──
   setTopologyErrors: (errors: TopologyError[]) => void;
@@ -299,6 +422,7 @@ export interface EditorState {
   setShowPictures: (show: boolean) => void;
   setShowTextures: (show: boolean) => void;
   setShowObjects: (show: boolean) => void;
+  setObjectsAnimation: (show: boolean) => void;
   setSelectedLgr: (name: string) => void;
   setLgrLoading: (loading: boolean) => void;
 
@@ -312,9 +436,18 @@ export interface EditorState {
   startTesting: () => void;
   stopTesting: () => void;
 
+  // ── Command palette ──
+  commandPaletteOpen: boolean;
+  setCommandPaletteOpen: (open: boolean) => void;
+
+  // ── Hotkeys panel ──
+  showHotkeysPanel: boolean;
+  setShowHotkeysPanel: (show: boolean) => void;
+
   // ── Undo batching ──
   beginUndoBatch: () => void;
   endUndoBatch: () => void;
+  cancelUndoBatch: () => void;
 }
 
 // ── Store implementation ────────────────────────────────────────────────────
@@ -326,6 +459,7 @@ export const useEditorStore = create<EditorState>()(
       level: null,
       fileName: null,
       activeTool: ToolId.Select,
+      toolPanelCollapsed: false,
       viewport: { centerX: 0, centerY: 0, zoom: 50 },
       grid: { enabled: true, size: 0.1, visible: true },
       selection: emptySelection(),
@@ -336,13 +470,13 @@ export const useEditorStore = create<EditorState>()(
       },
       pictureConfig: {
         name: 'barrel',
-        clip: Clip.Unclipped,
+        clip: Clip.Sky,
         distance: 600,
       },
       maskConfig: {
         texture: 'stone3',
         mask: 'maskbig',
-        clip: Clip.Unclipped,
+        clip: Clip.Ground,
         distance: 600,
       },
       topologyErrors: [],
@@ -350,7 +484,7 @@ export const useEditorStore = create<EditorState>()(
       cursorWorld: null,
       pipeRadius: 1.0,
       pipeRoundCorners: false,
-      shapeSides: 4,
+      shapeConfig: { type: 'square', topRatio: 50, tiltAngle: 30, segments: 400, sides: 5, starPoints: 5, starDepth: 50, randomMinVertices: 5, randomMaxVertices: 10 },
       imageImportConfig: {
         threshold: 128,
         simplifyTolerance: 2.0,
@@ -373,12 +507,28 @@ export const useEditorStore = create<EditorState>()(
       autoGrassConfig: { thickness: 0.5, maxAngle: 40 },
       isTesting: false,
       testConfig: { ...DEFAULT_TEST_CONFIG },
+      selectVertexEditing: false,
+      setSelectVertexEditing: (editing) => set({ selectVertexEditing: editing }),
+      toggleSelectVertexEditing: null,
+      setToggleSelectVertexEditing: (fn) => set({ toggleSelectVertexEditing: fn }),
       showValidationPanel: false,
       showPropPanel: false,
+      showPropertiesPanel: false,
+      showLevelScreen: true,
+      showActionsBar: true,
+      toolbarViewMode: 'both' as ButtonViewMode,
+      actionsBarViewMode: 'both' as ButtonViewMode,
+      toolbarButtonSize: 'small' as ButtonSize,
+      actionsBarButtonSize: 'small' as ButtonSize,
+      toolbarConfig: DEFAULT_TOOLBAR_CONFIG.map(c => ({ ...c })),
+      showStatusBar: true,
+      showMinimap: true,
+      minimapOpacity: 80,
       showGrass: true,
       showPictures: true,
       showTextures: true,
       showObjects: true,
+      objectsAnimation: false,
       selectedLgr: 'Default',
       lgrLoading: false,
 
@@ -415,7 +565,14 @@ export const useEditorStore = create<EditorState>()(
 
       // ── Tool state ──
 
-      setActiveTool: (tool) => set({ activeTool: tool }),
+      setActiveTool: (tool) => {
+        const { activeTool, toolPanelCollapsed } = get();
+        if (tool === activeTool) {
+          set({ toolPanelCollapsed: !toolPanelCollapsed });
+        } else {
+          set({ activeTool: tool, toolPanelCollapsed: false });
+        }
+      },
 
       // ── Viewport ──
 
@@ -453,7 +610,7 @@ export const useEditorStore = create<EditorState>()(
 
       // ── Shape config ──
 
-      setShapeSides: (sides) => set({ shapeSides: sides }),
+      setShapeConfig: (config) => set((s) => ({ shapeConfig: { ...s.shapeConfig, ...config } })),
 
       // ── Image import config ──
 
@@ -483,57 +640,16 @@ export const useEditorStore = create<EditorState>()(
       copySelection: () => {
         const { level, selection } = get();
         if (!level) return;
-        const hasPolys = selection.polygonIndices.size > 0;
-        const hasObjs = selection.objectIndices.size > 0;
-        if (!hasPolys && !hasObjs) return;
-
-        const polygons = [...selection.polygonIndices].map((i) => {
-          const p = level.polygons[i]!;
-          return {
-            grass: p.grass,
-            vertices: p.vertices.map((v) => ({ x: v.x, y: v.y })),
-          };
-        });
-
-        const objects = [...selection.objectIndices].map((i) => {
-          const o = level.objects[i]!;
-          return {
-            x: o.position.x,
-            y: o.position.y,
-            type: o.type,
-            gravity: o.gravity,
-            animation: o.animation,
-          };
-        });
-
+        if (selection.polygonIndices.size === 0 && selection.objectIndices.size === 0) return;
+        const { polygons, objects } = extractSelectionData(level, selection);
         set({ clipboard: { polygons, objects, pasteCount: 0 } });
       },
 
       cutSelection: () => {
         const { level, selection } = get();
         if (!level) return;
-        const hasPolys = selection.polygonIndices.size > 0;
-        const hasObjs = selection.objectIndices.size > 0;
-        if (!hasPolys && !hasObjs) return;
-
-        // Copy first
-        const polygons = [...selection.polygonIndices].map((i) => {
-          const p = level.polygons[i]!;
-          return {
-            grass: p.grass,
-            vertices: p.vertices.map((v) => ({ x: v.x, y: v.y })),
-          };
-        });
-        const objects = [...selection.objectIndices].map((i) => {
-          const o = level.objects[i]!;
-          return {
-            x: o.position.x,
-            y: o.position.y,
-            type: o.type,
-            gravity: o.gravity,
-            animation: o.animation,
-          };
-        });
+        if (selection.polygonIndices.size === 0 && selection.objectIndices.size === 0) return;
+        const { polygons, objects } = extractSelectionData(level, selection);
 
         // Then delete + set clipboard in one go
         const clone = cloneLevel(level);
@@ -606,6 +722,77 @@ export const useEditorStore = create<EditorState>()(
           isDirty: true,
           selection: sel,
           clipboard: { ...clipboard, pasteCount: clipboard.pasteCount + 1 },
+        });
+      },
+
+      // ── Library ──
+
+      placeFromLibrary: (item) => {
+        const { level, viewport } = get();
+        if (!level) return;
+        if (item.polygons.length === 0 && item.objects.length === 0 && item.pictures.length === 0) return;
+
+        const clone = cloneLevel(level);
+        const cx = viewport.centerX;
+        const cy = viewport.centerY;
+
+        const polyStartIdx = clone.polygons.length;
+        const objStartIdx = clone.objects.length;
+        const picStartIdx = clone.pictures.length;
+
+        for (const pd of item.polygons) {
+          const poly = new Polygon();
+          poly.id = generateId();
+          poly.grass = pd.grass;
+          poly.vertices = pd.vertices.map(
+            (v) => new Position(v.x + cx, v.y + cy),
+          );
+          clone.polygons.push(poly);
+        }
+
+        for (const od of item.objects) {
+          const obj = new ElmaObject();
+          obj.id = generateId();
+          obj.position = new Position(od.x + cx, od.y + cy);
+          obj.type = od.type;
+          obj.gravity = od.gravity;
+          obj.animation = od.animation;
+          clone.objects.push(obj);
+        }
+
+        for (const pd of item.pictures) {
+          const pic = new Picture();
+          pic.name = pd.name;
+          pic.texture = pd.texture;
+          pic.mask = pd.mask;
+          pic.position = new Position(pd.x + cx, pd.y + cy);
+          pic.clip = pd.clip;
+          pic.distance = pd.distance;
+          clone.pictures.push(pic);
+        }
+
+        const sel: SelectionState = {
+          polygonIndices: new Set(
+            item.polygons.map((_, i) => polyStartIdx + i),
+          ),
+          vertexIndices: new Map(
+            item.polygons.map((pd, i) => [
+              polyStartIdx + i,
+              new Set(pd.vertices.map((_, vi) => vi)),
+            ]),
+          ),
+          objectIndices: new Set(
+            item.objects.map((_, i) => objStartIdx + i),
+          ),
+          pictureIndices: new Set(
+            item.pictures.map((_, i) => picStartIdx + i),
+          ),
+        };
+
+        set({
+          level: clone,
+          isDirty: true,
+          selection: sel,
         });
       },
 
@@ -854,6 +1041,14 @@ export const useEditorStore = create<EditorState>()(
         set({ level: clone, isDirty: true });
       },
 
+      setLevelLgr: (lgr) => {
+        const { level } = get();
+        if (!level) return;
+        const clone = cloneLevel(level);
+        clone.lgr = lgr;
+        set({ level: clone, isDirty: true });
+      },
+
       setFileName: (fileName) => {
         set({ fileName, isDirty: true });
       },
@@ -972,6 +1167,87 @@ export const useEditorStore = create<EditorState>()(
         set({ level: clone, isDirty: true });
       },
 
+      mirrorHorizontally: () => {
+        const { level, selection } = get();
+        if (!level) return;
+        const hasSel = selection.polygonIndices.size > 0 || selection.objectIndices.size > 0 || selection.pictureIndices.size > 0;
+        if (!hasSel) return;
+
+        // Collect all selected points to compute bounding box center
+        const points: Vec2[] = [];
+        for (const pi of selection.polygonIndices) {
+          for (const v of level.polygons[pi]!.vertices) points.push(v);
+        }
+        for (const oi of selection.objectIndices) {
+          points.push(level.objects[oi]!.position);
+        }
+        for (const pi of selection.pictureIndices) {
+          points.push(level.pictures[pi]!.position);
+        }
+        if (points.length === 0) return;
+
+        const bbox = computeBBox(points);
+        const cx = (bbox.minX + bbox.maxX) / 2;
+
+        const clone = cloneLevel(level);
+        for (const pi of selection.polygonIndices) {
+          const poly = clone.polygons[pi]!;
+          for (const v of poly.vertices) {
+            v.x = 2 * cx - v.x;
+          }
+          poly.vertices.reverse();
+        }
+        for (const oi of selection.objectIndices) {
+          const obj = clone.objects[oi]!;
+          obj.position = new Position(2 * cx - obj.position.x, obj.position.y);
+        }
+        for (const pi of selection.pictureIndices) {
+          const pic = clone.pictures[pi]!;
+          pic.position = new Position(2 * cx - pic.position.x, pic.position.y);
+        }
+        set({ level: clone, isDirty: true });
+      },
+
+      mirrorVertically: () => {
+        const { level, selection } = get();
+        if (!level) return;
+        const hasSel = selection.polygonIndices.size > 0 || selection.objectIndices.size > 0 || selection.pictureIndices.size > 0;
+        if (!hasSel) return;
+
+        const points: Vec2[] = [];
+        for (const pi of selection.polygonIndices) {
+          for (const v of level.polygons[pi]!.vertices) points.push(v);
+        }
+        for (const oi of selection.objectIndices) {
+          points.push(level.objects[oi]!.position);
+        }
+        for (const pi of selection.pictureIndices) {
+          points.push(level.pictures[pi]!.position);
+        }
+        if (points.length === 0) return;
+
+        const bbox = computeBBox(points);
+        const cy = (bbox.minY + bbox.maxY) / 2;
+
+        const clone = cloneLevel(level);
+        for (const pi of selection.polygonIndices) {
+          const poly = clone.polygons[pi]!;
+          for (const v of poly.vertices) {
+            v.y = 2 * cy - v.y;
+          }
+          poly.vertices.reverse();
+        }
+        for (const oi of selection.objectIndices) {
+          const obj = clone.objects[oi]!;
+          obj.position = new Position(obj.position.x, 2 * cy - obj.position.y);
+        }
+        for (const pi of selection.pictureIndices) {
+          const pic = clone.pictures[pi]!;
+          pic.position = new Position(pic.position.x, 2 * cy - pic.position.y);
+        }
+        set({ level: clone, isDirty: true });
+      },
+
       // ── Topology ──
 
       setTopologyErrors: (errors) => set({ topologyErrors: errors }),
@@ -982,6 +1258,7 @@ export const useEditorStore = create<EditorState>()(
       setShowPictures: (show) => set({ showPictures: show }),
       setShowTextures: (show) => set({ showTextures: show }),
       setShowObjects: (show) => set({ showObjects: show }),
+      setObjectsAnimation: (show) => set({ objectsAnimation: show }),
       setSelectedLgr: (name) => set({ selectedLgr: name }),
       setLgrLoading: (loading) => set({ lgrLoading: loading }),
 
@@ -993,6 +1270,29 @@ export const useEditorStore = create<EditorState>()(
 
       setShowValidationPanel: (show) => set({ showValidationPanel: show }),
       setShowPropPanel: (show) => set({ showPropPanel: show }),
+      setShowPropertiesPanel: (show) => set({ showPropertiesPanel: show }),
+      setShowLevelScreen: (show) => set({ showLevelScreen: show }),
+
+      // ── Interface settings ──
+      setShowActionsBar: (show) => set({ showActionsBar: show }),
+      setToolbarViewMode: (mode) => set({ toolbarViewMode: mode }),
+      setActionsBarViewMode: (mode) => set({ actionsBarViewMode: mode }),
+      setToolbarButtonSize: (size) => set({ toolbarButtonSize: size }),
+      setActionsBarButtonSize: (size) => set({ actionsBarButtonSize: size }),
+      setToolbarItemVisibility: (id, visible) => set((s) => ({
+        toolbarConfig: s.toolbarConfig.map(c => c.id === id ? { ...c, visible } : c),
+      })),
+      reorderToolbarItem: (fromIndex, toIndex) => set((s) => {
+        if (fromIndex === toIndex) return s;
+        const config = [...s.toolbarConfig];
+        const [item] = config.splice(fromIndex, 1);
+        config.splice(toIndex, 0, item!);
+        return { toolbarConfig: config };
+      }),
+      resetToolbarConfig: () => set({ toolbarConfig: DEFAULT_TOOLBAR_CONFIG.map(c => ({ ...c })) }),
+      setShowStatusBar: (show) => set({ showStatusBar: show }),
+      setShowMinimap: (show) => set({ showMinimap: show }),
+      setMinimapOpacity: (value) => set({ minimapOpacity: Math.max(0, Math.min(100, value)) }),
 
       // ── Testing ──
 
@@ -1010,6 +1310,14 @@ export const useEditorStore = create<EditorState>()(
         set({ isTesting: true, showValidationPanel: false });
       },
       stopTesting: () => set({ isTesting: false }),
+
+      // ── Command palette ──────────────────────────────────────────────
+      commandPaletteOpen: false,
+      setCommandPaletteOpen: (open) => set({ commandPaletteOpen: open }),
+
+      // ── Hotkeys panel ──────────────────────────────────────────────
+      showHotkeysPanel: false,
+      setShowHotkeysPanel: (show) => set({ showHotkeysPanel: show }),
 
       // ── Undo batching ─────────────────────────────────────────────────
       // Pause undo tracking at drag start, commit a single entry on drag end.
@@ -1035,6 +1343,14 @@ export const useEditorStore = create<EditorState>()(
           }
           undoBatchSnapshot = null;
         }
+      },
+      cancelUndoBatch: () => {
+        if (undoBatchSnapshot) {
+          // Restore level while tracking is still paused (no undo entry)
+          set({ level: undoBatchSnapshot.level, fileName: undoBatchSnapshot.fileName });
+          undoBatchSnapshot = null;
+        }
+        useEditorStore.temporal.getState().resume();
       },
     }),
     {
@@ -1111,7 +1427,19 @@ useEditorStore.subscribe((state) => {
     showPictures: state.showPictures,
     showTextures: state.showTextures,
     showObjects: state.showObjects,
+    objectsAnimation: state.objectsAnimation,
     selectedLgr: state.selectedLgr,
+    autoGrassConfig: state.autoGrassConfig,
+    grid: state.grid,
+    toolbarConfig: state.toolbarConfig,
+    showStatusBar: state.showStatusBar,
+    showActionsBar: state.showActionsBar,
+    toolbarViewMode: state.toolbarViewMode,
+    actionsBarViewMode: state.actionsBarViewMode,
+    toolbarButtonSize: state.toolbarButtonSize,
+    actionsBarButtonSize: state.actionsBarButtonSize,
+    showMinimap: state.showMinimap,
+    minimapOpacity: state.minimapOpacity,
   });
   const testConfig = JSON.stringify(state.testConfig);
 
@@ -1142,7 +1470,21 @@ function restoreFromLocalStorage(): void {
       patch.showPictures = props.showPictures ?? true;
       patch.showTextures = props.showTextures ?? true;
       patch.showObjects = props.showObjects ?? true;
+      patch.objectsAnimation = props.objectsAnimation ?? false;
       if (props.selectedLgr) patch.selectedLgr = props.selectedLgr;
+      if (Array.isArray(props.toolbarConfig)) {
+        patch.toolbarConfig = reconcileToolbarConfig(props.toolbarConfig);
+      }
+      if (props.autoGrassConfig) patch.autoGrassConfig = props.autoGrassConfig;
+      if (props.grid) patch.grid = props.grid;
+      if (props.showStatusBar !== undefined) patch.showStatusBar = props.showStatusBar;
+      if (props.showActionsBar !== undefined) patch.showActionsBar = props.showActionsBar;
+      if (props.toolbarViewMode) patch.toolbarViewMode = props.toolbarViewMode;
+      if (props.actionsBarViewMode) patch.actionsBarViewMode = props.actionsBarViewMode;
+      if (props.toolbarButtonSize) patch.toolbarButtonSize = props.toolbarButtonSize;
+      if (props.actionsBarButtonSize) patch.actionsBarButtonSize = props.actionsBarButtonSize;
+      if (props.showMinimap !== undefined) patch.showMinimap = props.showMinimap;
+      if (props.minimapOpacity !== undefined && isFinite(props.minimapOpacity)) patch.minimapOpacity = props.minimapOpacity;
     }
   } catch {
     localStorage.removeItem(LS_EDITOR_PROPS_KEY);

@@ -42,7 +42,7 @@ export class ObjectRenderer {
     this.hasLgr = true;
   }
 
-  draw(level: LevelData, gameTime: number, viewProj: Float32Array, showTextures = true): void {
+  draw(level: LevelData, gameTime: number, viewProj: Float32Array, showTextures = true, objectsAnimation = true): void {
     if (!showTextures || !this.hasLgr || !this.atlas?.texture || !this.regions) {
       this.drawFallback(level, gameTime, viewProj);
       return;
@@ -90,7 +90,7 @@ export class ObjectRenderer {
       if (frames.length === 0) continue;
 
       // Frame selection
-      const frameIndex = Math.floor(animSeconds * ANIM_FPS) % frames.length;
+      const frameIndex = objectsAnimation ? Math.floor(animSeconds * ANIM_FPS) % frames.length : 0;
       const region = frames[frameIndex];
 
       // Draw as axis-aligned quad

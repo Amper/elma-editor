@@ -38,7 +38,9 @@ body,
   pointer-events: none;
 }
 
+/* ── Toolbar buttons (.btn--icon) ── */
 .btn--icon {
+  position: relative;
   width: 48px;
   height: 48px;
   display: flex;
@@ -51,17 +53,60 @@ body,
   letter-spacing: 0.02em;
 }
 
+/* Toolbar size variants (small = current default) */
+[data-size="medium"] .btn--icon { width: 56px; height: 56px; font-size: 11px; gap: 5px; }
+[data-size="large"] .btn--icon { width: 64px; height: 64px; font-size: 12px; gap: 6px; }
+
+/* Compact toolbar: icons-only or text-only */
+[data-view="icons"] .btn--icon { width: 36px; height: 36px; }
+[data-view="icons"][data-size="medium"] .btn--icon { width: 44px; height: 44px; }
+[data-view="icons"][data-size="large"] .btn--icon { width: 52px; height: 52px; }
+
+[data-view="text"] .btn--icon { width: auto; height: 28px; padding: 0 6px; flex-direction: row; }
+[data-view="text"][data-size="medium"] .btn--icon { height: 34px; padding: 0 8px; font-size: 12px; }
+[data-view="text"][data-size="large"] .btn--icon { height: 40px; padding: 0 10px; font-size: 13px; }
+
+/* Toolbar DnD feedback */
+.btn--icon[draggable="true"] { cursor: grab; }
+.btn--icon.btn--dragging { opacity: 0.3; cursor: grabbing; }
+.btn--icon.btn--drop-indicator::before {
+  content: '';
+  position: absolute;
+  top: -3px;
+  left: 4px;
+  right: 4px;
+  height: 2px;
+  background: var(--color-accent);
+  border-radius: 1px;
+  pointer-events: none;
+}
+
 .btn--active {
   background: var(--color-bg-active);
 }
 
+/* ── Actions bar buttons (.btn--text) ── */
 .btn--text {
-  padding: var(--space-sm) var(--space-md);
+  padding: var(--space-xs) var(--space-md);
   display: flex;
   align-items: center;
   gap: 4px;
-  font-size: 13px;
+  font-size: 10px;
+  align-self: stretch;
 }
+
+/* Actions bar size variants (small = current default) */
+[data-size="medium"] .btn--text { padding: var(--space-sm) var(--space-lg); font-size: 12px; gap: 5px; }
+[data-size="large"] .btn--text { padding: var(--space-md) var(--space-xl); font-size: 13px; gap: 6px; }
+
+/* Compact actions bar: icons-only or text-only */
+[data-view="icons"] .btn--text { padding: var(--space-xs) var(--space-sm); }
+[data-view="icons"][data-size="medium"] .btn--text { padding: var(--space-sm) var(--space-md); }
+[data-view="icons"][data-size="large"] .btn--text { padding: var(--space-md) var(--space-lg); }
+
+[data-view="text"] .btn--text { padding: var(--space-xs) var(--space-sm); }
+[data-view="text"][data-size="medium"] .btn--text { padding: var(--space-sm) var(--space-md); }
+[data-view="text"][data-size="large"] .btn--text { padding: var(--space-md) var(--space-lg); }
 
 /* ── Inputs ── */
 .input,
@@ -109,12 +154,17 @@ body,
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--color-text-secondary);
-  margin: 16px 0 0;
+  margin: 22px 0 0;
   cursor: pointer;
   user-select: none;
   display: flex;
   align-items: center;
   gap: 6px;
+  transition: color var(--transition-fast);
+}
+
+.section-header:hover {
+  color: var(--color-text);
 }
 
 .section-header::before {
@@ -135,7 +185,7 @@ body,
 
 .accordion-body {
   overflow: hidden;
-  padding-top: 8px;
+  padding-top: 10px;
 }
 
 .accordion-body--closed {
@@ -145,7 +195,7 @@ body,
 /* ── Form labels ── */
 .form-label {
   display: block;
-  margin-bottom: 6px;
+  margin-bottom: 14px;
   font-size: 12px;
   color: var(--color-text-secondary);
 }
@@ -153,6 +203,147 @@ body,
 .form-label > .input,
 .form-label > .select {
   margin-top: var(--space-xs);
+}
+
+/* ── Hint text ── */
+.hint-text {
+  margin-top: var(--space-xs);
+  font-size: 11px;
+  color: var(--color-text-secondary);
+}
+
+.hint-text kbd {
+  display: inline-block;
+  padding: 0 4px;
+  font-size: 10px;
+  font-family: inherit;
+  background: var(--color-bg-tertiary);
+  border: 1px solid var(--color-border);
+  border-radius: 3px;
+}
+
+/* ── Type switch ── */
+.type-switch {
+  display: flex;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  margin-bottom: 14px;
+}
+
+.type-switch__option {
+  flex: 1;
+  padding: var(--space-md) var(--space-md);
+  font-size: 11px;
+  font-family: inherit;
+  font-weight: 400;
+  border: none;
+  background: var(--color-bg-input);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.type-switch__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.6);
+  flex-shrink: 0;
+}
+
+.type-switch__option:not(:last-child) {
+  border-right: 1px solid var(--color-border);
+}
+
+.type-switch--vertical {
+  flex-direction: column;
+}
+
+.type-switch--vertical .type-switch__option {
+  justify-content: flex-start;
+}
+
+.type-switch--vertical .type-switch__option:not(:last-child) {
+  border-right: none;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.type-switch__option--active {
+  background: var(--color-bg-active);
+  color: var(--color-text-primary);
+}
+
+.type-switch__option:hover:not(.type-switch__option--active) {
+  background: var(--color-bg-hover);
+}
+
+/* ── Picture picker ── */
+.picture-picker {
+  margin-bottom: 14px;
+}
+
+.picture-picker__search {
+  margin-bottom: 8px;
+}
+
+.picture-picker__grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 4px;
+  background: var(--color-bg-input);
+}
+
+.picture-picker__item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 2px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: none;
+  cursor: pointer;
+  color: var(--color-text-secondary);
+  font-size: 9px;
+  font-family: inherit;
+  overflow: hidden;
+}
+
+.picture-picker__item:hover {
+  background: var(--color-bg-hover);
+}
+
+.picture-picker__item--active {
+  border-color: var(--color-accent);
+  background: var(--color-bg-active);
+  color: var(--color-text-primary);
+}
+
+.picture-picker__name {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.picture-picker__empty {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 12px;
+  font-size: 11px;
+  color: var(--color-text-secondary);
 }
 
 /* ── Pill badges ── */
@@ -248,17 +439,14 @@ body,
    Tablet responsive overrides
    ═══════════════════════════════════════════════ */
 @media (max-width: 1023px) {
-  .btn--icon {
-    width: 40px;
-    height: 40px;
-  }
+  .btn--icon { width: 40px; height: 40px; }
 }
 
 /* ═══════════════════════════════════════════════
    Phone responsive overrides
    ═══════════════════════════════════════════════ */
 @media (max-width: 767px) {
-  /* Toolbar buttons: small, icon-only */
+  /* Toolbar buttons: forced icon-only touch targets */
   .btn--icon {
     width: var(--touch-target-min);
     height: var(--touch-target-min);

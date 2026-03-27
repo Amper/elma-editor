@@ -20,7 +20,8 @@ export class ToolManager {
   constructor(private getStore: () => EditorState) {
     this.tools = new Map<ToolId, EditorTool>([
       [ToolId.Select, new SelectTool(getStore)],
-      [ToolId.DrawPolygon, new DrawPolygonTool(getStore)],
+      [ToolId.DrawPolygon, new DrawPolygonTool(getStore, false)],
+      [ToolId.DrawGrass, new DrawPolygonTool(getStore, true)],
       [ToolId.DrawObject, new DrawObjectTool(getStore)],
       [ToolId.Pipe, new PipeTool(getStore)],
       [ToolId.Shape, new ShapeTool(getStore)],
@@ -59,5 +60,8 @@ export class ToolManager {
   }
   getCursor(): string {
     return this.activeTool?.getCursor() ?? 'default';
+  }
+  wantsContextMenu(): boolean {
+    return this.activeTool?.wantsContextMenu?.() ?? true;
   }
 }

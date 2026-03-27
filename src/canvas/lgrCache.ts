@@ -13,10 +13,16 @@ export { BIKE_PREVIEW_SIZE };
 
 export interface LgrEditorAssets {
   texturePatterns: Map<string, CanvasPattern>;
+  /** Texture thumbnails for the picker UI (same images as texturePatterns, as bitmaps). */
+  textureBitmaps: Map<string, ImageBitmap>;
   sprites: {
     food: ImageBitmap | null;
     killer: ImageBitmap | null;
     exit: ImageBitmap | null;
+    /** All animation frames for cycling (used when objects animation is on). */
+    foodFrames: ImageBitmap[];
+    killerFrames: ImageBitmap[];
+    exitFrames: ImageBitmap[];
   };
   bikeSprite: ImageBitmap | null;
   /** Picture sprites from the LGR, keyed by name. Each has bitmap + world size. */
@@ -68,8 +74,10 @@ async function buildAssets(lgr: LgrData): Promise<LgrEditorAssets> {
 
   // Convert all textures to tiling CanvasPatterns (fully opaque — no transparency for textures)
   const texturePatterns = new Map<string, CanvasPattern>();
+  const textureBitmaps = new Map<string, ImageBitmap>();
   for (const [name, img] of lgr.textures) {
     const bitmap = await createImageBitmap(decodedImageToOpaqueImageData(img));
+    textureBitmaps.set(name, bitmap);
     const pattern = octx.createPattern(bitmap, 'repeat');
     if (pattern) {
       texturePatterns.set(name, pattern);
@@ -82,10 +90,18 @@ async function buildAssets(lgr: LgrData): Promise<LgrEditorAssets> {
     return createImageBitmap(decodedImageToImageData(frames[0]!));
   }
 
+  // Convert all frames of an animation to ImageBitmaps
+  async function allFrames(frames: DecodedImage[]): Promise<ImageBitmap[]> {
+    return Promise.all(frames.map((f) => createImageBitmap(decodedImageToImageData(f))));
+  }
+
   const sprites = {
     food: await firstFrame(lgr.objectAnims.foodSets[0] ?? []),
     killer: await firstFrame(lgr.objectAnims.killer),
     exit: await firstFrame(lgr.objectAnims.exit),
+    foodFrames: await allFrames(lgr.objectAnims.foodSets[0] ?? []),
+    killerFrames: await allFrames(lgr.objectAnims.killer),
+    exitFrames: await allFrames(lgr.objectAnims.exit),
   };
 
   // Pre-render bike at rest pose for start object preview
@@ -118,7 +134,7 @@ async function buildAssets(lgr: LgrData): Promise<LgrEditorAssets> {
     });
   }
 
-  return { texturePatterns, sprites, bikeSprite, pictures, masks };
+  return { texturePatterns, textureBitmaps, sprites, bikeSprite, pictures, masks };
 }
 
 /**

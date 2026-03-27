@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback } from 'react';
+import { useRef, useEffect, useCallback, useState } from 'react';
 import { useEditorStore } from '@/state/editorStore';
 import { renderFrame } from './renderer';
 import { screenToWorld, zoomAtPoint, panByScreenDelta, fitLevel } from './viewport';
@@ -9,6 +9,7 @@ import { ToolId } from '@/types';
 import { undo, redo } from '@/state/selectors';
 import { readLevelFile, downloadLevel } from '@/io/fileIO';
 import { loadEditorLgr, switchLgr } from './lgrCache';
+import { CanvasContextMenu } from '@/components/CanvasContextMenu';
 
 export function EditorCanvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -19,7 +20,7 @@ export function EditorCanvas() {
   const prevToolRef = useRef<ToolId | null>(null);
   const spaceHeldRef = useRef(false);
   const containerRef = useRef<HTMLDivElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
 
   // Ensure ToolManager exists
   if (!toolManagerRef.current) {
@@ -40,6 +41,7 @@ export function EditorCanvas() {
   const showPictures = useEditorStore((s) => s.showPictures);
   const showTextures = useEditorStore((s) => s.showTextures);
   const showObjects = useEditorStore((s) => s.showObjects);
+  const objectsAnimation = useEditorStore((s) => s.objectsAnimation);
 
   // Sync tool manager with store's active tool
   useEffect(() => {
@@ -102,6 +104,7 @@ export function EditorCanvas() {
         showPictures,
         showTextures,
         showObjects,
+        objectsAnimation,
       });
 
       // Draw tool overlay in world space
@@ -122,7 +125,7 @@ export function EditorCanvas() {
     };
     animFrameRef.current = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(animFrameRef.current);
-  }, [level, viewport, selection, grid, topologyErrors, activeTool, showGrass, showPictures, showTextures, showObjects]);
+  }, [level, viewport, selection, grid, topologyErrors, activeTool, showGrass, showPictures, showTextures, showObjects, objectsAnimation]);
 
   // ── Mouse wheel -> zoom ──
   useEffect(() => {
@@ -131,6 +134,7 @@ export function EditorCanvas() {
 
     const handleWheel = (e: WheelEvent) => {
       e.preventDefault();
+      setContextMenu(null);
       const rect = canvas.getBoundingClientRect();
       const screenPoint = { x: e.clientX - rect.left, y: e.clientY - rect.top };
       const delta = e.deltaY < 0 ? 1 : -1;
@@ -191,6 +195,9 @@ export function EditorCanvas() {
 
   const handlePointerDown = useCallback(
     (e: React.PointerEvent) => {
+      // Close context menu if open
+      setContextMenu(null);
+
       // Focus canvas for keyboard events
       canvasRef.current?.focus();
 
@@ -245,12 +252,16 @@ export function EditorCanvas() {
             ctrlKey: false,
             altKey: false,
           };
-          // Abort the in-progress left-click action before dispatching right-click
+          // Abort the in-progress left-click action
           toolManagerRef.current?.onPointerUp(syntheticEvent);
-          toolManagerRef.current?.onPointerDown({
-            ...syntheticEvent,
-            button: 2,
-          });
+
+          if (toolManagerRef.current?.wantsContextMenu() ?? true) {
+            if (!useEditorStore.getState().isTesting) {
+              setContextMenu({ x: longPressStartRef.current.x, y: longPressStartRef.current.y });
+            }
+          } else {
+            toolManagerRef.current?.onPointerDown({ ...syntheticEvent, button: 2 });
+          }
         }, 500);
       }
 
@@ -391,13 +402,16 @@ export function EditorCanvas() {
 
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
-    // Right-click: dispatch to tool (for polygon closing, etc.)
-    const pe = makePointerEvent(e);
-    // Simulate a right-click pointer down
-    toolManagerRef.current?.onPointerDown({
-      ...pe,
-      button: 2,
-    });
+    if (useEditorStore.getState().isTesting) return;
+
+    // If the tool needs right-click (e.g. committing a polygon), dispatch to it
+    if (toolManagerRef.current && !toolManagerRef.current.wantsContextMenu()) {
+      const pe = makePointerEvent(e);
+      toolManagerRef.current.onPointerDown({ ...pe, button: 2 });
+      return;
+    }
+
+    setContextMenu({ x: e.clientX, y: e.clientY });
   }, [makePointerEvent]);
 
   // ── Keyboard handlers ──
@@ -411,6 +425,24 @@ export function EditorCanvas() {
       ) {
         return;
       }
+
+      // Hotkeys panel
+      if (e.key === 'F1') {
+        e.preventDefault();
+        const s = useEditorStore.getState();
+        s.setShowHotkeysPanel(!s.showHotkeysPanel);
+        return;
+      }
+
+      // Command palette
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        useEditorStore.getState().setCommandPaletteOpen(true);
+        return;
+      }
+
+      // Skip all shortcuts while command palette or hotkeys panel is open
+      if (useEditorStore.getState().commandPaletteOpen || useEditorStore.getState().showHotkeysPanel) return;
 
       // Start testing (default F5)
       const restartKey = useEditorStore.getState().testConfig.restartKey;
@@ -474,13 +506,17 @@ export function EditorCanvas() {
         return;
       }
 
-      // Space -> temporary pan
+      // Space -> temporary pan (skip when draw polygon/grass tool is active
+      // so the tool can use Space for direction reversal)
       if (e.key === ' ' && !spaceHeldRef.current) {
-        e.preventDefault();
-        spaceHeldRef.current = true;
-        prevToolRef.current = useEditorStore.getState().activeTool;
-        useEditorStore.getState().setActiveTool(ToolId.Pan);
-        return;
+        const active = useEditorStore.getState().activeTool;
+        if (active !== ToolId.DrawPolygon && active !== ToolId.DrawGrass && active !== ToolId.Shape) {
+          e.preventDefault();
+          spaceHeldRef.current = true;
+          prevToolRef.current = active;
+          useEditorStore.getState().setActiveTool(ToolId.Pan);
+          return;
+        }
       }
 
       // Grid visibility toggle
@@ -503,6 +539,7 @@ export function EditorCanvas() {
           d: ToolId.DrawPolygon,
           p: ToolId.Pipe,
           r: ToolId.Shape,
+          g: ToolId.DrawGrass,
           o: ToolId.DrawObject,
           v: ToolId.Vertex,
           h: ToolId.Pan,
@@ -584,32 +621,6 @@ export function EditorCanvas() {
     };
   }, []);
 
-  // ── Start page handlers ──
-  const handleNewLevel = useCallback(() => {
-    useEditorStore.getState().newLevel();
-  }, []);
-
-  const handleOpenLevel = useCallback(() => {
-    fileInputRef.current?.click();
-  }, []);
-
-  const handleFileInputChange = useCallback(
-    async (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (!file) return;
-      const { level: lev, fileName } = await readLevelFile(file);
-      const store = useEditorStore.getState();
-      store.loadLevel(lev, fileName);
-      const canvas = canvasRef.current;
-      if (canvas) {
-        const rect = canvas.getBoundingClientRect();
-        store.setViewport(fitLevel(lev.polygons, rect.width, rect.height));
-      }
-      e.target.value = '';
-    },
-    [],
-  );
-
   // ── Drag-and-drop ──
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -658,29 +669,12 @@ export function EditorCanvas() {
         }}
         onContextMenu={handleContextMenu}
       />
-      {!level && (
-        <div className="start-page">
-          <h1 className="start-page__title">Elma Level Editor</h1>
-          <p className="start-page__subtitle">
-            Create a new level or open an existing one
-          </p>
-          <div className="start-page__actions">
-            <button className="btn start-page__btn" onClick={handleNewLevel}>
-              New Level
-            </button>
-            <button className="btn start-page__btn" onClick={handleOpenLevel}>
-              Open Level
-            </button>
-          </div>
-          <p className="start-page__hint">or drag a .lev file here</p>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".lev"
-            style={{ display: 'none' }}
-            onChange={handleFileInputChange}
-          />
-        </div>
+      {contextMenu && (
+        <CanvasContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          onClose={() => setContextMenu(null)}
+        />
       )}
     </div>
   );

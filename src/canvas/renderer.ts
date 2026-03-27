@@ -19,6 +19,7 @@ export interface RenderContext {
   showPictures: boolean;
   showTextures: boolean;
   showObjects: boolean;
+  objectsAnimation: boolean;
 }
 
 export function renderFrame(
@@ -82,7 +83,8 @@ export function renderFrame(
 
   // Layer 4: Objects (simplified circle fallback when textures hidden)
   if (rc.showObjects) {
-    renderObjects(ctx, rc.level.objects, rc.showTextures ? lgrAssets : null);
+    renderObjects(ctx, rc.level.objects, rc.showTextures ? lgrAssets : null,
+      rc.objectsAnimation ? performance.now() : undefined);
   }
 
   // Layer 5: Overlays (selection, topology errors)

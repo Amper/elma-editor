@@ -1,0 +1,119 @@
+/* ── Tooltip wrapper ── */
+.tooltip-wrap {
+  position: relative;
+}
+
+.tooltip {
+  position: absolute;
+  z-index: 1000;
+  pointer-events: none;
+  white-space: nowrap;
+  background: var(--color-bg-primary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 6px 10px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  opacity: 0;
+  transition: opacity var(--transition-fast), translate var(--transition-fast);
+}
+
+.tooltip-wrap:hover > .tooltip {
+  opacity: 1;
+  translate: 0;
+  transition-delay: 400ms;
+}
+
+/* ── Right side (default for vertical toolbar) ── */
+.tooltip-wrap--right > .tooltip {
+  left: calc(100% + 8px);
+  top: 50%;
+  translate: -4px -50%;
+  transform: translateY(-50%);
+}
+
+.tooltip-wrap--right > .tooltip::before {
+  content: '';
+  position: absolute;
+  right: 100%;
+  top: 50%;
+  transform: translateY(-50%);
+  border: 5px solid transparent;
+  border-right-color: var(--color-border);
+}
+
+.tooltip-wrap--right > .tooltip::after {
+  content: '';
+  position: absolute;
+  right: 100%;
+  top: 50%;
+  transform: translateY(-50%);
+  border: 4px solid transparent;
+  border-right-color: var(--color-bg-primary);
+}
+
+.tooltip-wrap--right:hover > .tooltip {
+  translate: 0 -50%;
+}
+
+/* ── Top side (for horizontal mobile toolbar) ── */
+.tooltip-wrap--top > .tooltip {
+  bottom: calc(100% + 8px);
+  left: 50%;
+  translate: -50% 4px;
+  transform: translateX(-50%);
+}
+
+.tooltip-wrap--top > .tooltip::before {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 5px solid transparent;
+  border-top-color: var(--color-border);
+}
+
+.tooltip-wrap--top > .tooltip::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 4px solid transparent;
+  border-top-color: var(--color-bg-primary);
+}
+
+.tooltip-wrap--top:hover > .tooltip {
+  translate: -50% 0;
+}
+
+/* ── Content ── */
+.tooltip__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tooltip__label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.tooltip__kbd {
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1;
+  padding: 2px 5px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--color-text-secondary);
+}
+
+.tooltip__desc {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--color-text-secondary);
+}

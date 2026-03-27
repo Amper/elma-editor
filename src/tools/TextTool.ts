@@ -98,6 +98,10 @@ export class TextTool implements EditorTool {
     return store.textPolygons ? 'crosshair' : 'default';
   }
 
+  wantsContextMenu(): boolean {
+    return this.getStore().textPolygons === null;
+  }
+
   private placePolygons(worldPos: Vec2) {
     const store = this.getStore();
     const polygons = store.textPolygons;

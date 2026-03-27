@@ -77,7 +77,7 @@ export class WebGLRenderer {
     this.lgrLoaded = true;
   }
 
-  render(state: GameState, options?: { showGrass?: boolean; showPictures?: boolean; showTextures?: boolean }): void {
+  render(state: GameState, options?: { showGrass?: boolean; showPictures?: boolean; showTextures?: boolean; objectsAnimation?: boolean }): void {
     const gl = this.glCtx.gl;
     const cam = state.camera;
 
@@ -110,7 +110,8 @@ export class WebGLRenderer {
     this.pictureRenderer.draw(state.level, viewProj, showPictures, showTextures);
 
     // 6. Objects (animated sprites or colored circles)
-    this.objectRenderer.draw(state.level, state.gameTime, viewProj, showTextures);
+    const objectsAnimation = options?.objectsAnimation ?? true;
+    this.objectRenderer.draw(state.level, state.gameTime, viewProj, showTextures, objectsAnimation);
 
     // 7. Bike (textured parts or wireframe fallback)
     this.bikeRenderer.draw(state.motor, viewProj, showTextures);

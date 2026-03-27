@@ -1,7 +1,13 @@
 export interface LgrInfo {
   LGRIndex: number;
   LGRName: string;
+  LGRDesc: string;
   FileLink: string;
+  PreviewLink: string;
+}
+
+export function lgrPreviewUrl(info: LgrInfo): string {
+  return `https://space.elma.online/lgr/${info.PreviewLink}`;
 }
 
 let cached: LgrInfo[] | null = null;

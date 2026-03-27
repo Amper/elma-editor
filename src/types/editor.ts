@@ -1,6 +1,18 @@
 import type { ObjectType, Gravity, Clip } from 'elmajs';
 import type { Vec2 } from './geometry';
 
+/** Display mode for toolbar / actions bar buttons. */
+export type ButtonViewMode = 'icons' | 'text' | 'both';
+
+/** Button size for toolbar / actions bar. */
+export type ButtonSize = 'small' | 'medium' | 'large';
+
+/** Toolbar item configuration (order + visibility). */
+export interface ToolbarItemConfig {
+  id: ToolId;
+  visible: boolean;
+}
+
 /** Enumeration of all editor tools. */
 export enum ToolId {
   Select = 'select',
@@ -13,6 +25,7 @@ export enum ToolId {
   Shape = 'shape',
   ImageImport = 'image-import',
   DrawMask = 'draw-mask',
+  DrawGrass = 'draw-grass',
   Text = 'text',
 }
 
@@ -62,6 +75,25 @@ export interface SelectionState {
   objectIndices: Set<number>;
   pictureIndices: Set<number>;
 }
+
+/** Shape tool types. */
+export type ShapeType = 'triangle' | 'square' | 'rectangle' | 'trapezoid' | 'parallelogram' | 'circle' | 'ellipse' | 'polygon' | 'star' | 'random';
+
+/** Shape tool configuration. */
+export interface ShapeConfig {
+  type: ShapeType;
+  topRatio: number;     // Trapezoid: % of top/bottom (default 50)
+  tiltAngle: number;    // Parallelogram: degrees (default 30)
+  segments: number;     // Circle/Ellipse: vertex count (default 32)
+  sides: number;        // Regular polygon: vertex count (default 5)
+  starPoints: number;   // Star: point count (default 5)
+  starDepth: number;    // Star: depression % (default 50)
+  randomMinVertices: number;  // Random: minimum vertex count (default 5)
+  randomMaxVertices: number;  // Random: maximum vertex count (default 10)
+}
+
+/** Shape types that use rubber band (bounding box) interaction. */
+export const RUBBER_BAND_SHAPES = new Set<ShapeType>(['rectangle', 'trapezoid', 'parallelogram', 'ellipse']);
 
 /** Topology error descriptor. */
 export interface TopologyError {
