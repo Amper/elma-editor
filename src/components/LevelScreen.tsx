@@ -41,7 +41,7 @@ export function LevelScreen() {
     const ctx = offscreen.getContext('2d');
     if (!ctx) return;
     const vp = fitLevel(level.polygons, w, h);
-    const emptySelection = { polygonIndices: new Set<number>(), vertexIndices: new Map(), objectIndices: new Set<number>(), pictureIndices: new Set<number>() };
+    const emptySelection = { polygonIds: new Set<string>(), vertexSelections: new Map(), objectIds: new Set<string>(), pictureIds: new Set<string>() };
     renderFrame(ctx, offscreen.width, offscreen.height, {
       level,
       viewport: vp,

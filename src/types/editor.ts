@@ -70,10 +70,10 @@ export interface GridConfig {
 
 /** Selection state. */
 export interface SelectionState {
-  polygonIndices: Set<number>;
-  vertexIndices: Map<number, Set<number>>;
-  objectIndices: Set<number>;
-  pictureIndices: Set<number>;
+  polygonIds: Set<string>;
+  vertexSelections: Map<string, Set<number>>;
+  objectIds: Set<string>;
+  pictureIds: Set<string>;
 }
 
 /** Shape tool types. */

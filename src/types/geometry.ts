@@ -20,11 +20,11 @@ export interface Segment {
 
 /** Result of a hit-test against level geometry. */
 export type HitTestResult =
-  | { kind: 'vertex'; polygonIndex: number; vertexIndex: number; position: Vec2 }
-  | { kind: 'edge'; polygonIndex: number; edgeIndex: number; position: Vec2; t: number }
-  | { kind: 'object'; objectIndex: number; position: Vec2 }
-  | { kind: 'picture'; pictureIndex: number; position: Vec2 }
-  | { kind: 'polygon'; polygonIndex: number; position: Vec2 }
+  | { kind: 'vertex'; polygonIndex: number; polygonId: string; vertexIndex: number; position: Vec2 }
+  | { kind: 'edge'; polygonIndex: number; polygonId: string; edgeIndex: number; position: Vec2; t: number }
+  | { kind: 'object'; objectIndex: number; objectId: string; position: Vec2 }
+  | { kind: 'picture'; pictureIndex: number; pictureId: string; position: Vec2 }
+  | { kind: 'polygon'; polygonIndex: number; polygonId: string; position: Vec2 }
   | { kind: 'none' };
 
 // ── Transform frame types ────────────────────────────────────────────────────

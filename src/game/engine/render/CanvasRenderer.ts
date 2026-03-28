@@ -228,6 +228,26 @@ export class CanvasRenderer {
     ctx.fill();
   }
 
+  /** Render a remote bike at reduced opacity (re-applies camera transform). */
+  drawRemoteBike(motor: MotorState, cam: { x: number; y: number; zoom: number }, alpha = 0.75): void {
+    const { ctx, canvas } = this;
+    const width = canvas.clientWidth;
+    const height = canvas.clientHeight;
+    const ppm = this.pixelsPerMeter * cam.zoom;
+
+    ctx.save();
+    ctx.translate(width / 2, height / 2);
+    ctx.scale(ppm, -ppm);
+    ctx.translate(-cam.x, -cam.y);
+
+    const prev = ctx.globalAlpha;
+    ctx.globalAlpha = alpha;
+    this.drawBike(motor);
+    ctx.globalAlpha = prev;
+
+    ctx.restore();
+  }
+
   private drawHUD(state: GameState): void {
     const ctx = this.ctx;
     const width = this.canvas.clientWidth;

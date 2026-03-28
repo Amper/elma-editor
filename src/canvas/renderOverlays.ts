@@ -1,5 +1,5 @@
 import type { Level } from 'elmajs';
-import { type ViewportState, type SelectionState, type TopologyError, ToolId } from '@/types';
+import { type ViewportState, type SelectionState, type TopologyError, ToolId, type Vec2 } from '@/types';
 import { getTheme, withAlpha } from './themeColors';
 import { getEditorLgr } from './lgrCache';
 
@@ -35,9 +35,9 @@ function renderSelectionHighlights(
   const dashOffset = (timestamp * 0.001) % (dashLen + dashGap);
 
   // Highlight selected polygons: translucent fill + animated outline
-  for (const pi of selection.polygonIndices) {
-    const poly = level.polygons[pi];
-    if (!poly || poly.vertices.length < 2) continue;
+  for (const poly of level.polygons) {
+    if (!selection.polygonIds.has(poly.id)) continue;
+    if (poly.vertices.length < 2) continue;
 
     ctx.beginPath();
     ctx.moveTo(poly.vertices[0]!.x, poly.vertices[0]!.y);
@@ -62,8 +62,8 @@ function renderSelectionHighlights(
   // Highlight selected vertices: circles with white stroke ring
   // Skip in Select mode — it works with whole polygons, not individual vertices
   if (oc.activeTool !== ToolId.Select) {
-    for (const [pi, vertSet] of selection.vertexIndices) {
-      const poly = level.polygons[pi];
+    for (const [polyId, vertSet] of selection.vertexSelections) {
+      const poly = level.polygons.find((p) => p.id === polyId);
       if (!poly) continue;
       for (const vi of vertSet) {
         const v = poly.vertices[vi];
@@ -85,9 +85,8 @@ function renderSelectionHighlights(
   }
 
   // Highlight selected objects: animated ring
-  for (const oi of selection.objectIndices) {
-    const obj = level.objects[oi];
-    if (!obj) continue;
+  for (const obj of level.objects) {
+    if (!selection.objectIds.has(obj.id)) continue;
 
     // Outer glow ring
     ctx.beginPath();
@@ -109,9 +108,8 @@ function renderSelectionHighlights(
 
   // Highlight selected pictures: selection rectangle (position = top-left)
   const lgrAssets = getEditorLgr();
-  for (const pi of selection.pictureIndices) {
-    const pic = level.pictures[pi];
-    if (!pic) continue;
+  for (const pic of level.pictures) {
+    if (!selection.pictureIds.has(pic.id)) continue;
     const picData = (pic.texture && pic.mask)
       ? lgrAssets?.masks.get(pic.mask)
       : lgrAssets?.pictures.get(pic.name);
@@ -162,5 +160,50 @@ function renderTopologyErrors(
     ctx.moveTo(x + xSize, y - xSize);
     ctx.lineTo(x - xSize, y + xSize);
     ctx.stroke();
+  }
+}
+
+export function renderRemoteUsers(
+  ctx: CanvasRenderingContext2D,
+  remoteUsers: Map<string, any>,
+  level: Level,
+  toScreen: (p: Vec2) => Vec2,
+): void {
+  for (const user of remoteUsers.values()) {
+    if (!user.cursor) continue;
+    const screenPos = toScreen(user.cursor);
+
+    // Draw cursor dot
+    ctx.beginPath();
+    ctx.arc(screenPos.x, screenPos.y, 5, 0, Math.PI * 2);
+    ctx.fillStyle = user.color;
+    ctx.fill();
+
+    // Draw name label
+    ctx.font = '11px sans-serif';
+    ctx.fillStyle = user.color;
+    ctx.fillText(user.userName, screenPos.x + 10, screenPos.y - 5);
+
+    // Draw remote selections
+    if (user.selectedPolygonIds?.size > 0) {
+      ctx.strokeStyle = user.color;
+      ctx.lineWidth = 2;
+      ctx.setLineDash([4, 4]);
+      for (const poly of level.polygons) {
+        if (!user.selectedPolygonIds.has(poly.id)) continue;
+        const verts = poly.vertices;
+        if (verts.length < 2) continue;
+        ctx.beginPath();
+        const first = toScreen(verts[0]!);
+        ctx.moveTo(first.x, first.y);
+        for (let i = 1; i < verts.length; i++) {
+          const sv = toScreen(verts[i]!);
+          ctx.lineTo(sv.x, sv.y);
+        }
+        ctx.closePath();
+        ctx.stroke();
+      }
+      ctx.setLineDash([]);
+    }
   }
 }

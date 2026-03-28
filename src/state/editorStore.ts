@@ -23,6 +23,22 @@ import { splitPolygons, selfSplitPolygon } from '@/utils/splitPolygons';
 import { autoGrassPolygon, type AutoGrassConfig } from '@/utils/autoGrass';
 import { pointInPolygon, computeSignedArea, computeBBox } from '@/utils/geometry';
 import { generateId } from '@/utils/generateId';
+import { polyIdToIndex, objectIdToIndex, pictureIdToIndex } from '@/utils/idLookup';
+import type { Operation } from '@/collab/operations';
+import type { CollabClient } from '@/collab/CollabClient';
+import type { UserInfo, BikeSnapshot } from '@/collab/protocol';
+import { applyOperation } from '@/collab/operationApplier';
+
+// ── Remote user for collab ───────────────────────────────────────────────────
+
+interface RemoteUser extends UserInfo {
+  cursor: { x: number; y: number } | null;
+  selectedPolygonIds: Set<string>;
+  selectedObjectIds: Set<string>;
+  activeTool: string;
+  isTesting: boolean;
+  bikeState: BikeSnapshot | null;
+}
 
 // ── Test config ──────────────────────────────────────────────────────────────
 
@@ -135,6 +151,7 @@ function cloneLevel(level: Level): Level {
   });
   clone.pictures = level.pictures.map((p) => {
     const cp = new Picture();
+    cp.id = p.id;
     cp.name = p.name;
     cp.texture = p.texture;
     cp.mask = p.mask;
@@ -154,48 +171,42 @@ function assignLevelIds(level: Level): void {
   for (const o of level.objects) {
     if (!o.id) o.id = generateId();
   }
+  for (const pic of level.pictures) {
+    if (!pic.id) pic.id = generateId();
+  }
 }
 
 function emptySelection(): SelectionState {
   return {
-    polygonIndices: new Set(),
-    vertexIndices: new Map(),
-    objectIndices: new Set(),
-    pictureIndices: new Set(),
+    polygonIds: new Set(),
+    vertexSelections: new Map(),
+    objectIds: new Set(),
+    pictureIds: new Set(),
   };
 }
 
 /** Extract selected polygons, objects and pictures as plain serializable data. */
 export function extractSelectionData(level: Level, selection: SelectionState) {
-  const polygons = [...selection.polygonIndices].map((i) => {
-    const p = level.polygons[i]!;
-    return {
-      grass: p.grass,
-      vertices: p.vertices.map((v) => ({ x: v.x, y: v.y })),
-    };
-  });
-  const objects = [...selection.objectIndices].map((i) => {
-    const o = level.objects[i]!;
-    return {
-      x: o.position.x,
-      y: o.position.y,
-      type: o.type,
-      gravity: o.gravity,
-      animation: o.animation,
-    };
-  });
-  const pictures = [...selection.pictureIndices].map((i) => {
-    const p = level.pictures[i]!;
-    return {
-      x: p.position.x,
-      y: p.position.y,
-      name: p.name,
-      texture: p.texture,
-      mask: p.mask,
-      clip: p.clip,
-      distance: p.distance,
-    };
-  });
+  const polygons = level.polygons.filter(p => selection.polygonIds.has(p.id)).map((p) => ({
+    grass: p.grass,
+    vertices: p.vertices.map((v) => ({ x: v.x, y: v.y })),
+  }));
+  const objects = level.objects.filter(o => selection.objectIds.has(o.id)).map((o) => ({
+    x: o.position.x,
+    y: o.position.y,
+    type: o.type,
+    gravity: o.gravity,
+    animation: o.animation,
+  }));
+  const pictures = level.pictures.filter(p => selection.pictureIds.has(p.id)).map((p) => ({
+    x: p.position.x,
+    y: p.position.y,
+    name: p.name,
+    texture: p.texture,
+    mask: p.mask,
+    clip: p.clip,
+    distance: p.distance,
+  }));
   return { polygons, objects, pictures };
 }
 
@@ -287,6 +298,21 @@ export interface EditorState {
   /** Show the full-screen Level screen. */
   showLevelScreen: boolean;
   setShowLevelScreen: (show: boolean) => void;
+
+  // ── Collab ──
+  collabClient: CollabClient | null;
+  isCollaborating: boolean;
+  remoteUsers: Map<string, RemoteUser>;
+  showCollabPanel: boolean;
+  setCollabClient: (client: CollabClient | null) => void;
+  setShowCollabPanel: (show: boolean) => void;
+  applyRemoteOperation: (op: Operation, userId: string) => void;
+  loadCollabLevel: (level: Level, users: UserInfo[]) => void;
+  addRemoteUser: (user: UserInfo) => void;
+  removeRemoteUser: (userId: string) => void;
+  updateRemoteUser: (userId: string, data: Partial<{ cursor: { x: number; y: number } | null; selectedPolygonIds: string[]; selectedObjectIds: string[]; activeTool: string }>) => void;
+  setRemoteBikeState: (userId: string, bike: BikeSnapshot) => void;
+  setRemoteTesting: (userId: string, isTesting: boolean) => void;
 
   // ── Interface settings ──
   /** Whether the top actions bar is visible. */
@@ -380,15 +406,15 @@ export interface EditorState {
   // ── Level mutations (each creates an undo snapshot) ──
   addPolygon: (data: { grass: boolean; vertices: Vec2[] }) => void;
   addPolygons: (data: Array<{ grass: boolean; vertices: Vec2[] }>) => void;
-  removePolygons: (indices: number[]) => void;
-  setPolygonGrass: (index: number, grass: boolean) => void;
-  setPolygonsGrass: (indices: number[], grass: boolean) => void;
+  removePolygons: (ids: string[]) => void;
+  setPolygonGrass: (id: string, grass: boolean) => void;
+  setPolygonsGrass: (ids: string[], grass: boolean) => void;
   moveVertices: (
-    moves: Array<{ polyIdx: number; vertIdx: number; newPos: Vec2 }>,
+    moves: Array<{ polyId: string; vertIdx: number; newPos: Vec2 }>,
   ) => void;
-  insertVertex: (polyIdx: number, afterVertIdx: number, pos: Vec2) => void;
-  removeVertex: (polyIdx: number, vertIdx: number) => void;
-  removeVertices: (verts: Map<number, Set<number>>) => void;
+  insertVertex: (polyId: string, afterVertIdx: number, pos: Vec2) => void;
+  removeVertex: (polyId: string, vertIdx: number) => void;
+  removeVertices: (verts: Map<string, Set<number>>) => void;
   addObject: (data: {
     x: number;
     y: number;
@@ -396,13 +422,13 @@ export interface EditorState {
     gravity: Gravity;
     animation: number;
   }) => void;
-  removeObjects: (indices: number[]) => void;
-  moveObjects: (moves: Array<{ objIdx: number; newPos: Vec2 }>) => void;
+  removeObjects: (ids: string[]) => void;
+  moveObjects: (moves: Array<{ objectId: string; newPos: Vec2 }>) => void;
   addPicture: (data: { x: number; y: number; name: string; clip: Clip; distance: number; texture?: string; mask?: string }) => void;
-  removePictures: (indices: number[]) => void;
-  movePictures: (moves: Array<{ picIdx: number; newPos: Vec2 }>) => void;
-  updatePictures: (indices: number[], data: Partial<{ name: string; clip: Clip; distance: number; texture: string; mask: string }>) => void;
-  updateObjects: (indices: number[], data: Partial<{ type: ObjectType; gravity: Gravity; animation: number }>) => void;
+  removePictures: (ids: string[]) => void;
+  movePictures: (moves: Array<{ pictureId: string; newPos: Vec2 }>) => void;
+  updatePictures: (ids: string[], data: Partial<{ name: string; clip: Clip; distance: number; texture: string; mask: string }>) => void;
+  updateObjects: (ids: string[], data: Partial<{ type: ObjectType; gravity: Gravity; animation: number }>) => void;
   setLevelName: (name: string) => void;
   setLevelGround: (ground: string) => void;
   setLevelSky: (sky: string) => void;
@@ -454,7 +480,13 @@ export interface EditorState {
 
 export const useEditorStore = create<EditorState>()(
   temporal(
-    (set, get) => ({
+    (set, get) => {
+      const broadcast = (op: Operation) => {
+        const client = get().collabClient;
+        if (client?.connected) client.sendOperation(op);
+      };
+
+      return ({
       // Initial state
       level: null,
       fileName: null,
@@ -531,6 +563,10 @@ export const useEditorStore = create<EditorState>()(
       objectsAnimation: false,
       selectedLgr: 'Default',
       lgrLoading: false,
+      collabClient: null,
+      isCollaborating: false,
+      remoteUsers: new Map(),
+      showCollabPanel: false,
 
       // ── Level I/O ──
 
@@ -640,7 +676,7 @@ export const useEditorStore = create<EditorState>()(
       copySelection: () => {
         const { level, selection } = get();
         if (!level) return;
-        if (selection.polygonIndices.size === 0 && selection.objectIndices.size === 0) return;
+        if (selection.polygonIds.size === 0 && selection.objectIds.size === 0) return;
         const { polygons, objects } = extractSelectionData(level, selection);
         set({ clipboard: { polygons, objects, pasteCount: 0 } });
       },
@@ -648,15 +684,13 @@ export const useEditorStore = create<EditorState>()(
       cutSelection: () => {
         const { level, selection } = get();
         if (!level) return;
-        if (selection.polygonIndices.size === 0 && selection.objectIndices.size === 0) return;
+        if (selection.polygonIds.size === 0 && selection.objectIds.size === 0) return;
         const { polygons, objects } = extractSelectionData(level, selection);
 
         // Then delete + set clipboard in one go
         const clone = cloneLevel(level);
-        const sortedPolys = [...selection.polygonIndices].sort((a, b) => b - a);
-        for (const idx of sortedPolys) clone.polygons.splice(idx, 1);
-        const sortedObjs = [...selection.objectIndices].sort((a, b) => b - a);
-        for (const idx of sortedObjs) clone.objects.splice(idx, 1);
+        clone.polygons = clone.polygons.filter(p => !selection.polygonIds.has(p.id));
+        clone.objects = clone.objects.filter(o => !selection.objectIds.has(o.id));
 
         set({
           level: clone,
@@ -664,6 +698,11 @@ export const useEditorStore = create<EditorState>()(
           selection: emptySelection(),
           clipboard: { polygons, objects, pasteCount: 0 },
         });
+        const ops: Operation[] = [];
+        if (selection.polygonIds.size > 0) ops.push({ type: 'removePolygons', ids: [...selection.polygonIds] });
+        if (selection.objectIds.size > 0) ops.push({ type: 'removeObjects', ids: [...selection.objectIds] });
+        if (ops.length === 1) broadcast(ops[0]!);
+        else if (ops.length > 1) broadcast({ type: 'batch', operations: ops });
       },
 
       pasteClipboard: () => {
@@ -674,9 +713,9 @@ export const useEditorStore = create<EditorState>()(
         const offset = 0.5 * (clipboard.pasteCount + 1);
         const clone = cloneLevel(level);
 
-        // Track indices of newly added items for selection
-        const polyStartIdx = clone.polygons.length;
-        const objStartIdx = clone.objects.length;
+        // Track IDs of newly added items for selection
+        const newPolyIds: string[] = [];
+        const newObjIds: string[] = [];
 
         // Add polygons with offset
         for (const pd of clipboard.polygons) {
@@ -687,6 +726,7 @@ export const useEditorStore = create<EditorState>()(
             (v) => new Position(v.x + offset, v.y + offset),
           );
           clone.polygons.push(poly);
+          newPolyIds.push(poly.id);
         }
 
         // Add objects with offset
@@ -698,23 +738,20 @@ export const useEditorStore = create<EditorState>()(
           obj.gravity = od.gravity;
           obj.animation = od.animation;
           clone.objects.push(obj);
+          newObjIds.push(obj.id);
         }
 
         // Build selection for pasted items
         const sel: SelectionState = {
-          polygonIndices: new Set(
-            clipboard.polygons.map((_, i) => polyStartIdx + i),
-          ),
-          vertexIndices: new Map(
-            clipboard.polygons.map((pd, i) => [
-              polyStartIdx + i,
-              new Set(pd.vertices.map((_, vi) => vi)),
+          polygonIds: new Set(newPolyIds),
+          vertexSelections: new Map(
+            newPolyIds.map((id, i) => [
+              id,
+              new Set(clipboard.polygons[i]!.vertices.map((_, vi) => vi)),
             ]),
           ),
-          objectIndices: new Set(
-            clipboard.objects.map((_, i) => objStartIdx + i),
-          ),
-          pictureIndices: new Set(),
+          objectIds: new Set(newObjIds),
+          pictureIds: new Set(),
         };
 
         set({
@@ -723,6 +760,17 @@ export const useEditorStore = create<EditorState>()(
           selection: sel,
           clipboard: { ...clipboard, pasteCount: clipboard.pasteCount + 1 },
         });
+        const pasteOps: Operation[] = [];
+        for (let i = 0; i < newPolyIds.length; i++) {
+          const pd = clipboard.polygons[i]!;
+          pasteOps.push({ type: 'addPolygon', id: newPolyIds[i]!, grass: pd.grass, vertices: pd.vertices.map(v => ({ x: v.x + offset, y: v.y + offset })) });
+        }
+        for (let i = 0; i < newObjIds.length; i++) {
+          const od = clipboard.objects[i]!;
+          pasteOps.push({ type: 'addObject', id: newObjIds[i]!, x: od.x + offset, y: od.y + offset, objectType: od.type, gravity: od.gravity, animation: od.animation });
+        }
+        if (pasteOps.length === 1) broadcast(pasteOps[0]!);
+        else if (pasteOps.length > 1) broadcast({ type: 'batch', operations: pasteOps });
       },
 
       // ── Library ──
@@ -736,9 +784,9 @@ export const useEditorStore = create<EditorState>()(
         const cx = viewport.centerX;
         const cy = viewport.centerY;
 
-        const polyStartIdx = clone.polygons.length;
-        const objStartIdx = clone.objects.length;
-        const picStartIdx = clone.pictures.length;
+        const newPolyIds: string[] = [];
+        const newObjIds: string[] = [];
+        const newPicIds: string[] = [];
 
         for (const pd of item.polygons) {
           const poly = new Polygon();
@@ -748,6 +796,7 @@ export const useEditorStore = create<EditorState>()(
             (v) => new Position(v.x + cx, v.y + cy),
           );
           clone.polygons.push(poly);
+          newPolyIds.push(poly.id);
         }
 
         for (const od of item.objects) {
@@ -758,10 +807,12 @@ export const useEditorStore = create<EditorState>()(
           obj.gravity = od.gravity;
           obj.animation = od.animation;
           clone.objects.push(obj);
+          newObjIds.push(obj.id);
         }
 
         for (const pd of item.pictures) {
           const pic = new Picture();
+          pic.id = generateId();
           pic.name = pd.name;
           pic.texture = pd.texture;
           pic.mask = pd.mask;
@@ -769,24 +820,19 @@ export const useEditorStore = create<EditorState>()(
           pic.clip = pd.clip;
           pic.distance = pd.distance;
           clone.pictures.push(pic);
+          newPicIds.push(pic.id);
         }
 
         const sel: SelectionState = {
-          polygonIndices: new Set(
-            item.polygons.map((_, i) => polyStartIdx + i),
-          ),
-          vertexIndices: new Map(
-            item.polygons.map((pd, i) => [
-              polyStartIdx + i,
-              new Set(pd.vertices.map((_, vi) => vi)),
+          polygonIds: new Set(newPolyIds),
+          vertexSelections: new Map(
+            newPolyIds.map((id, i) => [
+              id,
+              new Set(item.polygons[i]!.vertices.map((_, vi) => vi)),
             ]),
           ),
-          objectIndices: new Set(
-            item.objects.map((_, i) => objStartIdx + i),
-          ),
-          pictureIndices: new Set(
-            item.pictures.map((_, i) => picStartIdx + i),
-          ),
+          objectIds: new Set(newObjIds),
+          pictureIds: new Set(newPicIds),
         };
 
         set({
@@ -794,6 +840,21 @@ export const useEditorStore = create<EditorState>()(
           isDirty: true,
           selection: sel,
         });
+        const libOps: Operation[] = [];
+        for (let i = 0; i < newPolyIds.length; i++) {
+          const pd = item.polygons[i]!;
+          libOps.push({ type: 'addPolygon', id: newPolyIds[i]!, grass: pd.grass, vertices: pd.vertices.map(v => ({ x: v.x + cx, y: v.y + cy })) });
+        }
+        for (let i = 0; i < newObjIds.length; i++) {
+          const od = item.objects[i]!;
+          libOps.push({ type: 'addObject', id: newObjIds[i]!, x: od.x + cx, y: od.y + cy, objectType: od.type, gravity: od.gravity, animation: od.animation });
+        }
+        for (let i = 0; i < newPicIds.length; i++) {
+          const pd = item.pictures[i]!;
+          libOps.push({ type: 'addPicture', id: newPicIds[i]!, x: pd.x + cx, y: pd.y + cy, name: pd.name, clip: pd.clip, distance: pd.distance, texture: pd.texture || undefined, mask: pd.mask || undefined });
+        }
+        if (libOps.length === 1) broadcast(libOps[0]!);
+        else if (libOps.length > 1) broadcast({ type: 'batch', operations: libOps });
       },
 
       // ── Level mutations ──
@@ -808,50 +869,57 @@ export const useEditorStore = create<EditorState>()(
         poly.vertices = data.vertices.map((v) => new Position(v.x, v.y));
         clone.polygons.push(poly);
         set({ level: clone, isDirty: true });
+        broadcast({ type: 'addPolygon', id: poly.id, grass: poly.grass, vertices: poly.vertices.map(v => ({ x: v.x, y: v.y })) });
       },
 
       addPolygons: (data) => {
         const { level } = get();
         if (!level || data.length === 0) return;
         const clone = cloneLevel(level);
+        const newPolygons: Polygon[] = [];
         for (const d of data) {
           const poly = new Polygon();
           poly.id = generateId();
           poly.grass = d.grass;
           poly.vertices = d.vertices.map((v) => new Position(v.x, v.y));
           clone.polygons.push(poly);
+          newPolygons.push(poly);
         }
         set({ level: clone, isDirty: true });
+        broadcast({ type: 'addPolygons', polygons: newPolygons.map(p => ({ id: p.id, grass: p.grass, vertices: p.vertices.map(v => ({ x: v.x, y: v.y })) })) });
       },
 
-      removePolygons: (indices) => {
+      removePolygons: (ids) => {
         const { level } = get();
         if (!level) return;
         const clone = cloneLevel(level);
-        const sorted = [...indices].sort((a, b) => b - a);
-        for (const idx of sorted) {
-          clone.polygons.splice(idx, 1);
-        }
+        const idSet = new Set(ids);
+        clone.polygons = clone.polygons.filter(p => !idSet.has(p.id));
         set({ level: clone, isDirty: true, selection: emptySelection() });
+        broadcast({ type: 'removePolygons', ids });
       },
 
-      setPolygonGrass: (index, grass) => {
+      setPolygonGrass: (id, grass) => {
         const { level } = get();
-        if (!level || !level.polygons[index]) return;
+        if (!level) return;
         const clone = cloneLevel(level);
-        clone.polygons[index]!.grass = grass;
+        const poly = clone.polygons.find(p => p.id === id);
+        if (!poly) return;
+        poly.grass = grass;
         set({ level: clone, isDirty: true });
+        broadcast({ type: 'setPolygonGrass', id, grass });
       },
 
-      setPolygonsGrass: (indices, grass) => {
+      setPolygonsGrass: (ids, grass) => {
         const { level } = get();
-        if (!level || indices.length === 0) return;
+        if (!level || ids.length === 0) return;
         const clone = cloneLevel(level);
-        for (const idx of indices) {
-          const poly = clone.polygons[idx];
-          if (poly) poly.grass = grass;
+        const idSet = new Set(ids);
+        for (const poly of clone.polygons) {
+          if (idSet.has(poly.id)) poly.grass = grass;
         }
         set({ level: clone, isDirty: true });
+        broadcast({ type: 'setPolygonsGrass', ids, grass });
       },
 
       moveVertices: (moves) => {
@@ -859,7 +927,8 @@ export const useEditorStore = create<EditorState>()(
         if (!level) return;
         const clone = cloneLevel(level);
         for (const m of moves) {
-          const poly = clone.polygons[m.polyIdx];
+          const pi = polyIdToIndex(clone, m.polyId);
+          const poly = clone.polygons[pi];
           const vert = poly?.vertices[m.vertIdx];
           if (vert) {
             vert.x = m.newPos.x;
@@ -867,26 +936,31 @@ export const useEditorStore = create<EditorState>()(
           }
         }
         set({ level: clone, isDirty: true });
+        broadcast({ type: 'moveVertices', moves });
       },
 
-      insertVertex: (polyIdx, afterVertIdx, pos) => {
+      insertVertex: (polyId, afterVertIdx, pos) => {
         const { level } = get();
         if (!level) return;
         const clone = cloneLevel(level);
-        const poly = clone.polygons[polyIdx];
+        const pi = polyIdToIndex(clone, polyId);
+        const poly = clone.polygons[pi];
         if (!poly) return;
         poly.vertices.splice(afterVertIdx, 0, new Position(pos.x, pos.y));
         set({ level: clone, isDirty: true });
+        broadcast({ type: 'insertVertex', polyId, afterVertIdx, pos });
       },
 
-      removeVertex: (polyIdx, vertIdx) => {
+      removeVertex: (polyId, vertIdx) => {
         const { level } = get();
         if (!level) return;
-        const poly = level.polygons[polyIdx];
+        const pi = polyIdToIndex(level, polyId);
+        const poly = level.polygons[pi];
         if (!poly || poly.vertices.length <= 3) return;
         const clone = cloneLevel(level);
-        clone.polygons[polyIdx]!.vertices.splice(vertIdx, 1);
+        clone.polygons[pi]!.vertices.splice(vertIdx, 1);
         set({ level: clone, isDirty: true });
+        broadcast({ type: 'removeVertex', polyId, vertIdx });
       },
 
       removeVertices: (verts) => {
@@ -894,7 +968,8 @@ export const useEditorStore = create<EditorState>()(
         if (!level) return;
         const clone = cloneLevel(level);
         // Process each polygon, removing indices in descending order
-        for (const [pi, vertSet] of verts) {
+        for (const [polyId, vertSet] of verts) {
+          const pi = polyIdToIndex(clone, polyId);
           const poly = clone.polygons[pi];
           if (!poly) continue;
           const remaining = poly.vertices.length - vertSet.size;
@@ -905,6 +980,7 @@ export const useEditorStore = create<EditorState>()(
           }
         }
         set({ level: clone, isDirty: true, selection: emptySelection() });
+        broadcast({ type: 'removeVertices', verts: [...verts.entries()].map(([polyId, indices]) => ({ polyId, vertIndices: [...indices] })) });
       },
 
       addObject: (data) => {
@@ -920,6 +996,7 @@ export const useEditorStore = create<EditorState>()(
         obj.animation = data.animation;
         clone.objects.push(obj);
         set({ level: clone, isDirty: true });
+        broadcast({ type: 'addObject', id: obj.id, x: obj.position.x, y: obj.position.y, objectType: obj.type, gravity: obj.gravity, animation: obj.animation });
       },
 
       addPicture: (data) => {
@@ -927,6 +1004,7 @@ export const useEditorStore = create<EditorState>()(
         if (!level) return;
         const clone = cloneLevel(level);
         const pic = new Picture();
+        pic.id = generateId();
         pic.name = data.name;
         pic.position = new Position(data.x, data.y);
         pic.clip = data.clip;
@@ -936,17 +1014,17 @@ export const useEditorStore = create<EditorState>()(
         if (data.texture && data.mask) pic.name = '';
         clone.pictures.push(pic);
         set({ level: clone, isDirty: true });
+        broadcast({ type: 'addPicture', id: pic.id, x: pic.position.x, y: pic.position.y, name: pic.name, clip: pic.clip, distance: pic.distance, texture: pic.texture || undefined, mask: pic.mask || undefined });
       },
 
-      removePictures: (indices) => {
+      removePictures: (ids) => {
         const { level } = get();
         if (!level) return;
         const clone = cloneLevel(level);
-        const sorted = [...indices].sort((a, b) => b - a);
-        for (const idx of sorted) {
-          clone.pictures.splice(idx, 1);
-        }
+        const idSet = new Set(ids);
+        clone.pictures = clone.pictures.filter(p => !idSet.has(p.id));
         set({ level: clone, isDirty: true, selection: emptySelection() });
+        broadcast({ type: 'removePictures', ids });
       },
 
       movePictures: (moves) => {
@@ -954,21 +1032,23 @@ export const useEditorStore = create<EditorState>()(
         if (!level) return;
         const clone = cloneLevel(level);
         for (const m of moves) {
-          const pic = clone.pictures[m.picIdx];
+          const pi = pictureIdToIndex(clone, m.pictureId);
+          const pic = clone.pictures[pi];
           if (pic) {
             pic.position = new Position(m.newPos.x, m.newPos.y);
           }
         }
         set({ level: clone, isDirty: true });
+        broadcast({ type: 'movePictures', moves });
       },
 
-      updatePictures: (indices, data) => {
+      updatePictures: (ids, data) => {
         const { level } = get();
         if (!level) return;
         const clone = cloneLevel(level);
-        for (const idx of indices) {
-          const pic = clone.pictures[idx];
-          if (!pic) continue;
+        const idSet = new Set(ids);
+        for (const pic of clone.pictures) {
+          if (!idSet.has(pic.id)) continue;
           if (data.name !== undefined) pic.name = data.name;
           if (data.clip !== undefined) pic.clip = data.clip;
           if (data.distance !== undefined) pic.distance = data.distance;
@@ -976,17 +1056,17 @@ export const useEditorStore = create<EditorState>()(
           if (data.mask !== undefined) pic.mask = data.mask;
         }
         set({ level: clone, isDirty: true });
+        broadcast({ type: 'updatePictures', ids, data });
       },
 
-      removeObjects: (indices) => {
+      removeObjects: (ids) => {
         const { level } = get();
         if (!level) return;
         const clone = cloneLevel(level);
-        const sorted = [...indices].sort((a, b) => b - a);
-        for (const idx of sorted) {
-          clone.objects.splice(idx, 1);
-        }
+        const idSet = new Set(ids);
+        clone.objects = clone.objects.filter(o => !idSet.has(o.id));
         set({ level: clone, isDirty: true, selection: emptySelection() });
+        broadcast({ type: 'removeObjects', ids });
       },
 
       moveObjects: (moves) => {
@@ -994,27 +1074,30 @@ export const useEditorStore = create<EditorState>()(
         if (!level) return;
         const clone = cloneLevel(level);
         for (const m of moves) {
-          const obj = clone.objects[m.objIdx];
+          const oi = objectIdToIndex(clone, m.objectId);
+          const obj = clone.objects[oi];
           if (obj) {
             obj.position.x = m.newPos.x;
             obj.position.y = m.newPos.y;
           }
         }
         set({ level: clone, isDirty: true });
+        broadcast({ type: 'moveObjects', moves });
       },
 
-      updateObjects: (indices, data) => {
+      updateObjects: (ids, data) => {
         const { level } = get();
-        if (!level || indices.length === 0) return;
+        if (!level || ids.length === 0) return;
         const clone = cloneLevel(level);
-        for (const index of indices) {
-          const obj = clone.objects[index];
-          if (!obj) continue;
+        const idSet = new Set(ids);
+        for (const obj of clone.objects) {
+          if (!idSet.has(obj.id)) continue;
           if (data.type !== undefined) obj.type = data.type;
           if (data.gravity !== undefined) obj.gravity = data.gravity;
           if (data.animation !== undefined) obj.animation = data.animation;
         }
         set({ level: clone, isDirty: true });
+        broadcast({ type: 'updateObjects', ids, data });
       },
 
       setLevelName: (name) => {
@@ -1023,6 +1106,7 @@ export const useEditorStore = create<EditorState>()(
         const clone = cloneLevel(level);
         clone.name = name;
         set({ level: clone, isDirty: true });
+        broadcast({ type: 'setLevelName', name });
       },
 
       setLevelGround: (ground) => {
@@ -1031,6 +1115,7 @@ export const useEditorStore = create<EditorState>()(
         const clone = cloneLevel(level);
         clone.ground = ground;
         set({ level: clone, isDirty: true });
+        broadcast({ type: 'setLevelGround', ground });
       },
 
       setLevelSky: (sky) => {
@@ -1039,6 +1124,7 @@ export const useEditorStore = create<EditorState>()(
         const clone = cloneLevel(level);
         clone.sky = sky;
         set({ level: clone, isDirty: true });
+        broadcast({ type: 'setLevelSky', sky });
       },
 
       setLevelLgr: (lgr) => {
@@ -1055,65 +1141,59 @@ export const useEditorStore = create<EditorState>()(
 
       mergeSelectedPolygons: () => {
         const { level, selection } = get();
-        if (!level || selection.polygonIndices.size < 1) return;
+        if (!level || selection.polygonIds.size < 1) return;
 
-        const indices = [...selection.polygonIndices];
-        const selectedPolys = indices.map((i) => level.polygons[i]!);
+        const selectedPolys = level.polygons.filter(p => selection.polygonIds.has(p.id));
 
         const result = mergePolygons(selectedPolys);
         if (!result) return; // Disjoint or failed — do nothing
 
         const clone = cloneLevel(level);
-        // Remove originals in descending order to preserve indices
-        const sorted = [...indices].sort((a, b) => b - a);
-        for (const idx of sorted) {
-          clone.polygons.splice(idx, 1);
-        }
+        // Remove originals by ID
+        clone.polygons = clone.polygons.filter(p => !selection.polygonIds.has(p.id));
         // Add merged polygon(s)
         for (const p of result) p.id = generateId();
         clone.polygons.push(...result);
 
         set({ level: clone, isDirty: true, selection: emptySelection() });
+        broadcast({ type: 'replacePolygons', removeIds: [...selection.polygonIds], add: result.map(p => ({ id: p.id, grass: p.grass, vertices: p.vertices.map(v => ({ x: v.x, y: v.y })) })) });
       },
 
       splitSelectedPolygons: () => {
         const { level, selection } = get();
-        if (!level || selection.polygonIndices.size < 1 || selection.polygonIndices.size > 2) return;
+        if (!level || selection.polygonIds.size < 1 || selection.polygonIds.size > 2) return;
 
-        const indices = [...selection.polygonIndices];
+        const selectedPolys = level.polygons.filter(p => selection.polygonIds.has(p.id));
 
         let result: ReturnType<typeof splitPolygons>;
-        if (indices.length === 1) {
+        if (selectedPolys.length === 1) {
           // Self-split: split a single self-intersecting polygon
-          result = selfSplitPolygon(level.polygons[indices[0]!]!);
+          result = selfSplitPolygon(selectedPolys[0]!);
         } else {
-          const [polyA, polyB] = indices.map((i) => level.polygons[i]!);
-          result = splitPolygons(polyA!, polyB!);
+          result = splitPolygons(selectedPolys[0]!, selectedPolys[1]!);
         }
         if (!result) return; // Not self-intersecting / disjoint / failed
 
         const clone = cloneLevel(level);
-        // Remove originals in descending order to preserve indices
-        const sorted = [...indices].sort((a, b) => b - a);
-        for (const idx of sorted) {
-          clone.polygons.splice(idx, 1);
-        }
+        // Remove originals by ID
+        clone.polygons = clone.polygons.filter(p => !selection.polygonIds.has(p.id));
         // Add split polygon pieces
         for (const p of result) p.id = generateId();
         clone.polygons.push(...result);
 
         set({ level: clone, isDirty: true, selection: emptySelection() });
+        broadcast({ type: 'replacePolygons', removeIds: [...selection.polygonIds], add: result.map(p => ({ id: p.id, grass: p.grass, vertices: p.vertices.map(v => ({ x: v.x, y: v.y })) })) });
       },
 
       autoGrassSelectedPolygons: () => {
         const { level, selection, autoGrassConfig } = get();
-        if (!level || selection.polygonIndices.size < 1) return;
+        if (!level || selection.polygonIds.size < 1) return;
 
         const grassPolygons: Array<{ grass: boolean; vertices: Vec2[] }> = [];
 
-        for (const idx of selection.polygonIndices) {
-          const poly = level.polygons[idx];
-          if (!poly || poly.grass) continue; // Skip grass polygons
+        for (const poly of level.polygons) {
+          if (!selection.polygonIds.has(poly.id)) continue;
+          if (poly.grass) continue; // Skip grass polygons
 
           const verts = poly.vertices.map((v) => ({ x: v.x, y: v.y }));
 
@@ -1136,9 +1216,8 @@ export const useEditorStore = create<EditorState>()(
             testPoint = { x: testPoint.x + nx * eps, y: testPoint.y + ny * eps };
           }
           let containingCount = 0;
-          for (let i = 0; i < level.polygons.length; i++) {
-            if (i === idx) continue;
-            const other = level.polygons[i]!;
+          for (const other of level.polygons) {
+            if (other.id === poly.id) continue;
             if (other.grass || other.vertices.length < 3) continue;
             if (pointInPolygon(testPoint, other.vertices)) containingCount++;
           }
@@ -1156,33 +1235,38 @@ export const useEditorStore = create<EditorState>()(
         if (grassPolygons.length === 0) return;
 
         const clone = cloneLevel(level);
+        const newGrassPolys: Polygon[] = [];
         for (const gp of grassPolygons) {
           const p = new Polygon();
           p.id = generateId();
           p.grass = true;
           p.vertices = gp.vertices.map((v) => new Position(v.x, v.y));
           clone.polygons.push(p);
+          newGrassPolys.push(p);
         }
 
         set({ level: clone, isDirty: true });
+        broadcast({ type: 'addPolygons', polygons: newGrassPolys.map(p => ({ id: p.id, grass: p.grass, vertices: p.vertices.map(v => ({ x: v.x, y: v.y })) })) });
       },
 
       mirrorHorizontally: () => {
         const { level, selection } = get();
         if (!level) return;
-        const hasSel = selection.polygonIndices.size > 0 || selection.objectIndices.size > 0 || selection.pictureIndices.size > 0;
+        const hasSel = selection.polygonIds.size > 0 || selection.objectIds.size > 0 || selection.pictureIds.size > 0;
         if (!hasSel) return;
 
         // Collect all selected points to compute bounding box center
         const points: Vec2[] = [];
-        for (const pi of selection.polygonIndices) {
-          for (const v of level.polygons[pi]!.vertices) points.push(v);
+        for (const poly of level.polygons) {
+          if (selection.polygonIds.has(poly.id)) {
+            for (const v of poly.vertices) points.push(v);
+          }
         }
-        for (const oi of selection.objectIndices) {
-          points.push(level.objects[oi]!.position);
+        for (const obj of level.objects) {
+          if (selection.objectIds.has(obj.id)) points.push(obj.position);
         }
-        for (const pi of selection.pictureIndices) {
-          points.push(level.pictures[pi]!.position);
+        for (const pic of level.pictures) {
+          if (selection.pictureIds.has(pic.id)) points.push(pic.position);
         }
         if (points.length === 0) return;
 
@@ -1190,39 +1274,54 @@ export const useEditorStore = create<EditorState>()(
         const cx = (bbox.minX + bbox.maxX) / 2;
 
         const clone = cloneLevel(level);
-        for (const pi of selection.polygonIndices) {
-          const poly = clone.polygons[pi]!;
+        for (const poly of clone.polygons) {
+          if (!selection.polygonIds.has(poly.id)) continue;
           for (const v of poly.vertices) {
             v.x = 2 * cx - v.x;
           }
           poly.vertices.reverse();
         }
-        for (const oi of selection.objectIndices) {
-          const obj = clone.objects[oi]!;
+        for (const obj of clone.objects) {
+          if (!selection.objectIds.has(obj.id)) continue;
           obj.position = new Position(2 * cx - obj.position.x, obj.position.y);
         }
-        for (const pi of selection.pictureIndices) {
-          const pic = clone.pictures[pi]!;
+        for (const pic of clone.pictures) {
+          if (!selection.pictureIds.has(pic.id)) continue;
           pic.position = new Position(2 * cx - pic.position.x, pic.position.y);
         }
         set({ level: clone, isDirty: true });
+        {
+          const mirrorOps: Operation[] = [];
+          const selPolys = clone.polygons.filter(p => selection.polygonIds.has(p.id));
+          if (selPolys.length > 0) {
+            mirrorOps.push({ type: 'replacePolygons', removeIds: selPolys.map(p => p.id), add: selPolys.map(p => ({ id: p.id, grass: p.grass, vertices: p.vertices.map(v => ({ x: v.x, y: v.y })) })) });
+          }
+          const objMoves = clone.objects.filter(o => selection.objectIds.has(o.id)).map(o => ({ objectId: o.id, newPos: { x: o.position.x, y: o.position.y } }));
+          if (objMoves.length > 0) mirrorOps.push({ type: 'moveObjects', moves: objMoves });
+          const picMoves = clone.pictures.filter(p => selection.pictureIds.has(p.id)).map(p => ({ pictureId: p.id, newPos: { x: p.position.x, y: p.position.y } }));
+          if (picMoves.length > 0) mirrorOps.push({ type: 'movePictures', moves: picMoves });
+          if (mirrorOps.length === 1) broadcast(mirrorOps[0]!);
+          else if (mirrorOps.length > 1) broadcast({ type: 'batch', operations: mirrorOps });
+        }
       },
 
       mirrorVertically: () => {
         const { level, selection } = get();
         if (!level) return;
-        const hasSel = selection.polygonIndices.size > 0 || selection.objectIndices.size > 0 || selection.pictureIndices.size > 0;
+        const hasSel = selection.polygonIds.size > 0 || selection.objectIds.size > 0 || selection.pictureIds.size > 0;
         if (!hasSel) return;
 
         const points: Vec2[] = [];
-        for (const pi of selection.polygonIndices) {
-          for (const v of level.polygons[pi]!.vertices) points.push(v);
+        for (const poly of level.polygons) {
+          if (selection.polygonIds.has(poly.id)) {
+            for (const v of poly.vertices) points.push(v);
+          }
         }
-        for (const oi of selection.objectIndices) {
-          points.push(level.objects[oi]!.position);
+        for (const obj of level.objects) {
+          if (selection.objectIds.has(obj.id)) points.push(obj.position);
         }
-        for (const pi of selection.pictureIndices) {
-          points.push(level.pictures[pi]!.position);
+        for (const pic of level.pictures) {
+          if (selection.pictureIds.has(pic.id)) points.push(pic.position);
         }
         if (points.length === 0) return;
 
@@ -1230,22 +1329,35 @@ export const useEditorStore = create<EditorState>()(
         const cy = (bbox.minY + bbox.maxY) / 2;
 
         const clone = cloneLevel(level);
-        for (const pi of selection.polygonIndices) {
-          const poly = clone.polygons[pi]!;
+        for (const poly of clone.polygons) {
+          if (!selection.polygonIds.has(poly.id)) continue;
           for (const v of poly.vertices) {
             v.y = 2 * cy - v.y;
           }
           poly.vertices.reverse();
         }
-        for (const oi of selection.objectIndices) {
-          const obj = clone.objects[oi]!;
+        for (const obj of clone.objects) {
+          if (!selection.objectIds.has(obj.id)) continue;
           obj.position = new Position(obj.position.x, 2 * cy - obj.position.y);
         }
-        for (const pi of selection.pictureIndices) {
-          const pic = clone.pictures[pi]!;
+        for (const pic of clone.pictures) {
+          if (!selection.pictureIds.has(pic.id)) continue;
           pic.position = new Position(pic.position.x, 2 * cy - pic.position.y);
         }
         set({ level: clone, isDirty: true });
+        {
+          const mirrorOps: Operation[] = [];
+          const selPolys = clone.polygons.filter(p => selection.polygonIds.has(p.id));
+          if (selPolys.length > 0) {
+            mirrorOps.push({ type: 'replacePolygons', removeIds: selPolys.map(p => p.id), add: selPolys.map(p => ({ id: p.id, grass: p.grass, vertices: p.vertices.map(v => ({ x: v.x, y: v.y })) })) });
+          }
+          const objMoves = clone.objects.filter(o => selection.objectIds.has(o.id)).map(o => ({ objectId: o.id, newPos: { x: o.position.x, y: o.position.y } }));
+          if (objMoves.length > 0) mirrorOps.push({ type: 'moveObjects', moves: objMoves });
+          const picMoves = clone.pictures.filter(p => selection.pictureIds.has(p.id)).map(p => ({ pictureId: p.id, newPos: { x: p.position.x, y: p.position.y } }));
+          if (picMoves.length > 0) mirrorOps.push({ type: 'movePictures', moves: picMoves });
+          if (mirrorOps.length === 1) broadcast(mirrorOps[0]!);
+          else if (mirrorOps.length > 1) broadcast({ type: 'batch', operations: mirrorOps });
+        }
       },
 
       // ── Topology ──
@@ -1352,7 +1464,85 @@ export const useEditorStore = create<EditorState>()(
         }
         useEditorStore.temporal.getState().resume();
       },
-    }),
+
+      // ── Collab ──
+
+      setCollabClient: (client) => set({ collabClient: client, isCollaborating: client !== null }),
+      setShowCollabPanel: (show) => set({ showCollabPanel: show }),
+
+      applyRemoteOperation: (op, _userId) => {
+        const { level } = get();
+        if (!level) return;
+        const newLevel = applyOperation(level, op);
+        set({ level: newLevel });
+      },
+
+      loadCollabLevel: (level, users) => {
+        const remoteUsers = new Map<string, RemoteUser>();
+        for (const u of users) {
+          remoteUsers.set(u.userId, {
+            ...u,
+            cursor: null,
+            selectedPolygonIds: new Set(),
+            selectedObjectIds: new Set(),
+            activeTool: '',
+            isTesting: false,
+            bikeState: null,
+          });
+        }
+        set({ level, isCollaborating: true, remoteUsers, selection: emptySelection() });
+      },
+
+      addRemoteUser: (user) => {
+        const users = new Map(get().remoteUsers);
+        users.set(user.userId, {
+          ...user,
+          cursor: null,
+          selectedPolygonIds: new Set(),
+          selectedObjectIds: new Set(),
+          activeTool: '',
+          isTesting: false,
+          bikeState: null,
+        });
+        set({ remoteUsers: users });
+      },
+
+      removeRemoteUser: (userId) => {
+        const users = new Map(get().remoteUsers);
+        users.delete(userId);
+        set({ remoteUsers: users });
+      },
+
+      updateRemoteUser: (userId, data) => {
+        const users = new Map(get().remoteUsers);
+        const existing = users.get(userId);
+        if (!existing) return;
+        users.set(userId, {
+          ...existing,
+          ...(data.cursor !== undefined ? { cursor: data.cursor } : {}),
+          ...(data.selectedPolygonIds ? { selectedPolygonIds: new Set(data.selectedPolygonIds) } : {}),
+          ...(data.selectedObjectIds ? { selectedObjectIds: new Set(data.selectedObjectIds) } : {}),
+          ...(data.activeTool !== undefined ? { activeTool: data.activeTool } : {}),
+        });
+        set({ remoteUsers: users });
+      },
+
+      setRemoteBikeState: (userId, bike) => {
+        const users = new Map(get().remoteUsers);
+        const existing = users.get(userId);
+        if (!existing) return;
+        users.set(userId, { ...existing, bikeState: bike });
+        set({ remoteUsers: users });
+      },
+
+      setRemoteTesting: (userId, isTesting) => {
+        const users = new Map(get().remoteUsers);
+        const existing = users.get(userId);
+        if (!existing) return;
+        users.set(userId, { ...existing, isTesting });
+        set({ remoteUsers: users });
+      },
+    });},
     {
       // Only track level data for undo/redo, not UI state
       partialize: (state) => ({

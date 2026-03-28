@@ -473,7 +473,7 @@ export function PropertyPanel() {
   // Accordion open state — set of open section IDs
   const [openSections, setOpenSections] = useState<Set<string>>(() => new Set());
 
-  const hasSelection = selection.polygonIndices.size > 0 || selection.objectIndices.size > 0 || selection.pictureIndices.size > 0;
+  const hasSelection = selection.polygonIds.size > 0 || selection.objectIds.size > 0 || selection.pictureIds.size > 0;
 
   // Auto-expand relevant sections when activeTool or selection changes
   useEffect(() => {
@@ -517,14 +517,18 @@ export function PropertyPanel() {
   const setPolygonsGrass = useEditorStore((s) => s.setPolygonsGrass);
 
   // Derive selection-panel data (rendered inline, no early return)
-  const selectedPolyIndices = selection.polygonIndices.size >= 1 ? [...selection.polygonIndices] : null;
-  const selectedPolys = selectedPolyIndices?.map((i) => level.polygons[i]).filter(Boolean) ?? [];
+  const selectedPolys = selection.polygonIds.size >= 1
+    ? level.polygons.filter((p) => selection.polygonIds.has(p.id))
+    : [];
+  const selectedPolyIds = selectedPolys.length > 0 ? selectedPolys.map((p) => p.id) : null;
   const hasSelectedPolys = selectedPolys.length > 0;
-  const allSameGrassState = hasSelectedPolys && selectedPolys.every((p) => p!.grass === selectedPolys[0]!.grass);
+  const allSameGrassState = hasSelectedPolys && selectedPolys.every((p) => p.grass === selectedPolys[0]!.grass);
   const commonGrass = allSameGrassState ? selectedPolys[0]!.grass : undefined;
 
-  const selectedObjIndices = selection.objectIndices.size >= 1 ? [...selection.objectIndices] : null;
-  const selectedObjects = selectedObjIndices?.map((i) => level.objects[i]).filter(Boolean) ?? [];
+  const selectedObjects = selection.objectIds.size >= 1
+    ? level.objects.filter((o) => selection.objectIds.has(o.id))
+    : [];
+  const selectedObjIds = selectedObjects.length > 0 ? selectedObjects.map((o) => o.id) : null;
   const hasSelectedObjects = selectedObjects.length > 0;
   const allSameType = hasSelectedObjects && selectedObjects.every((o) => o!.type === selectedObjects[0]!.type);
   const allSameGravity = hasSelectedObjects && selectedObjects.every((o) => o!.gravity === selectedObjects[0]!.gravity);
@@ -536,11 +540,13 @@ export function PropertyPanel() {
   const updatePictures = useEditorStore((s) => s.updatePictures);
 
   // Split selected pictures into regular pictures vs mask/texture pictures
-  const allPicIndices = selection.pictureIndices.size >= 1 ? [...selection.pictureIndices] : [];
-  const selRegularPicIndices = allPicIndices.filter((i) => { const p = level.pictures[i]; return p && !p.texture; });
-  const selMaskPicIndices = allPicIndices.filter((i) => { const p = level.pictures[i]; return p && !!p.texture; });
-  const selRegularPics = selRegularPicIndices.map((i) => level.pictures[i]!);
-  const selMaskPics = selMaskPicIndices.map((i) => level.pictures[i]!);
+  const allSelectedPics = selection.pictureIds.size >= 1
+    ? level.pictures.filter((p) => selection.pictureIds.has(p.id))
+    : [];
+  const selRegularPics = allSelectedPics.filter((p) => !p.texture);
+  const selRegularPicIds = selRegularPics.map((p) => p.id);
+  const selMaskPics = allSelectedPics.filter((p) => !!p.texture);
+  const selMaskPicIds = selMaskPics.map((p) => p.id);
 
   // Regular picture common props
   const commonPicName = selRegularPics.length > 0 && selRegularPics.every((p) => p.name === selRegularPics[0]!.name) ? selRegularPics[0]!.name : undefined;
@@ -559,19 +565,19 @@ export function PropertyPanel() {
       {hasSelectedPolys && (
         <>
           <h3 className="section-header section-header--open">
-            {selectedPolys.length === 1 ? `Polygon #${selectedPolyIndices![0]}` : `${selectedPolys.length} Polygons`}
+            {selectedPolys.length === 1 ? `Polygon ${selectedPolys[0]!.id.slice(0, 6)}` : `${selectedPolys.length} Polygons`}
           </h3>
           <div className="accordion-body">
             <div className="type-switch type-switch--vertical">
               <button
                 className={`type-switch__option${commonGrass === false ? ' type-switch__option--active' : ''}`}
-                onClick={() => setPolygonsGrass(selectedPolyIndices!, false)}
+                onClick={() => setPolygonsGrass(selectedPolyIds!, false)}
               >
                 <span className="type-switch__icon" style={{ color: '#2a5a8a' }}><PolygonIcon size={16} weight="fill" /></span> <span style={{ color: '#80b0e0' }}>Regular</span>
               </button>
               <button
                 className={`type-switch__option${commonGrass === true ? ' type-switch__option--active' : ''}`}
-                onClick={() => setPolygonsGrass(selectedPolyIndices!, true)}
+                onClick={() => setPolygonsGrass(selectedPolyIds!, true)}
               >
                 <span className="type-switch__icon" style={{ color: '#2a6a2a' }}><PlantIcon size={16} weight="fill" /></span> <span style={{ color: '#80c080' }}>Grass</span>
               </button>
@@ -588,7 +594,7 @@ export function PropertyPanel() {
       {hasSelectedObjects && (
         <>
           <h3 className="section-header section-header--open">
-            {selectedObjects.length === 1 ? `Object #${selectedObjIndices![0]}` : `${selectedObjects.length} Objects`}
+            {selectedObjects.length === 1 ? `Object ${selectedObjects[0]!.id.slice(0, 6)}` : `${selectedObjects.length} Objects`}
           </h3>
           <div className="accordion-body">
             {selectedObjects.length === 1 && (
@@ -599,26 +605,26 @@ export function PropertyPanel() {
             <div className="type-switch type-switch--vertical">
               <button
                 className={`type-switch__option${commonType === ObjectType.Exit ? ' type-switch__option--active' : ''}`}
-                onClick={() => updateObjects(selectedObjIndices!, { type: ObjectType.Exit })}
+                onClick={() => updateObjects(selectedObjIds!, { type: ObjectType.Exit })}
               >
                 <span className="type-switch__icon" style={{ color: '#6a5a00' }}><FlowerIcon size={16} weight="fill" /></span> <span style={{ color: '#d0c860' }}>Flower (Exit)</span>
               </button>
               <button
                 className={`type-switch__option${commonType === ObjectType.Apple ? ' type-switch__option--active' : ''}`}
-                onClick={() => updateObjects(selectedObjIndices!, { type: ObjectType.Apple })}
+                onClick={() => updateObjects(selectedObjIds!, { type: ObjectType.Apple })}
               >
                 <span className="type-switch__icon" style={{ color: '#a02020' }}><AppleLogoIcon size={16} weight="fill" /></span> <span style={{ color: '#e08080' }}>Apple</span>
               </button>
               <button
                 className={`type-switch__option${commonType === ObjectType.Killer ? ' type-switch__option--active' : ''}`}
-                onClick={() => updateObjects(selectedObjIndices!, { type: ObjectType.Killer })}
+                onClick={() => updateObjects(selectedObjIds!, { type: ObjectType.Killer })}
               >
                 <span className="type-switch__icon" style={{ color: '#444' }}><SkullIcon size={16} weight="fill" /></span> <span style={{ color: '#909090' }}>Killer</span>
               </button>
               {(!hasStart || commonType === ObjectType.Start) && (
                 <button
                   className={`type-switch__option${commonType === ObjectType.Start ? ' type-switch__option--active' : ''}`}
-                  onClick={() => updateObjects(selectedObjIndices!, { type: ObjectType.Start })}
+                  onClick={() => updateObjects(selectedObjIds!, { type: ObjectType.Start })}
                 >
                   <span className="type-switch__icon" style={{ color: '#2a5a8a' }}><FlagIcon size={16} weight="fill" /></span> <span style={{ color: '#80b0e0' }}>Start</span>
                 </button>
@@ -630,31 +636,31 @@ export function PropertyPanel() {
                 <div className="type-switch type-switch--vertical">
                   <button
                     className={`type-switch__option${commonGravity === Gravity.None ? ' type-switch__option--active' : ''}`}
-                    onClick={() => updateObjects(selectedObjIndices!, { gravity: Gravity.None })}
+                    onClick={() => updateObjects(selectedObjIds!, { gravity: Gravity.None })}
                   >
                     <span className="type-switch__icon" style={{ color: '#333' }}><DotOutlineIcon size={16} weight="fill" /></span> <span style={{ color: '#aaa' }}>Normal</span>
                   </button>
                   <button
                     className={`type-switch__option${commonGravity === Gravity.Up ? ' type-switch__option--active' : ''}`}
-                    onClick={() => updateObjects(selectedObjIndices!, { gravity: Gravity.Up })}
+                    onClick={() => updateObjects(selectedObjIds!, { gravity: Gravity.Up })}
                   >
                     <span className="type-switch__icon" style={{ color: '#222' }}><ArrowUpIcon size={16} weight="fill" /></span> <span style={{ color: '#aaa' }}>Up</span>
                   </button>
                   <button
                     className={`type-switch__option${commonGravity === Gravity.Down ? ' type-switch__option--active' : ''}`}
-                    onClick={() => updateObjects(selectedObjIndices!, { gravity: Gravity.Down })}
+                    onClick={() => updateObjects(selectedObjIds!, { gravity: Gravity.Down })}
                   >
                     <span className="type-switch__icon" style={{ color: '#222' }}><ArrowDownIcon size={16} weight="fill" /></span> <span style={{ color: '#aaa' }}>Down</span>
                   </button>
                   <button
                     className={`type-switch__option${commonGravity === Gravity.Left ? ' type-switch__option--active' : ''}`}
-                    onClick={() => updateObjects(selectedObjIndices!, { gravity: Gravity.Left })}
+                    onClick={() => updateObjects(selectedObjIds!, { gravity: Gravity.Left })}
                   >
                     <span className="type-switch__icon" style={{ color: '#222' }}><ArrowLeftIcon size={16} weight="fill" /></span> <span style={{ color: '#aaa' }}>Left</span>
                   </button>
                   <button
                     className={`type-switch__option${commonGravity === Gravity.Right ? ' type-switch__option--active' : ''}`}
-                    onClick={() => updateObjects(selectedObjIndices!, { gravity: Gravity.Right })}
+                    onClick={() => updateObjects(selectedObjIds!, { gravity: Gravity.Right })}
                   >
                     <span className="type-switch__icon" style={{ color: '#222' }}><ArrowRightIcon size={16} weight="fill" /></span> <span style={{ color: '#aaa' }}>Right</span>
                   </button>
@@ -667,7 +673,7 @@ export function PropertyPanel() {
       {selRegularPics.length > 0 && (
         <>
           <h3 className="section-header section-header--open">
-            {selRegularPics.length === 1 ? `Picture #${selRegularPicIndices[0]}` : `${selRegularPics.length} Pictures`}
+            {selRegularPics.length === 1 ? `Picture ${selRegularPics[0]!.id.slice(0, 6)}` : `${selRegularPics.length} Pictures`}
           </h3>
           <div className="accordion-body">
             {selRegularPics.length === 1 && (
@@ -679,7 +685,7 @@ export function PropertyPanel() {
               Name
               <select
                 value={commonPicName ?? ''}
-                onChange={(e) => updatePictures(selRegularPicIndices, { name: e.target.value })}
+                onChange={(e) => updatePictures(selRegularPicIds, { name: e.target.value })}
                 className="select"
               >
                 {commonPicName === undefined && <option value="">Mixed</option>}
@@ -692,7 +698,7 @@ export function PropertyPanel() {
               Clipping
               <select
                 value={commonPicClip ?? ''}
-                onChange={(e) => updatePictures(selRegularPicIndices, { clip: Number(e.target.value) as Clip })}
+                onChange={(e) => updatePictures(selRegularPicIds, { clip: Number(e.target.value) as Clip })}
                 className="select"
               >
                 {commonPicClip === undefined && <option value="">Mixed</option>}
@@ -706,7 +712,7 @@ export function PropertyPanel() {
               <input
                 type="number"
                 value={commonPicDist ?? ''}
-                onChange={(e) => updatePictures(selRegularPicIndices, { distance: Number(e.target.value) })}
+                onChange={(e) => updatePictures(selRegularPicIds, { distance: Number(e.target.value) })}
                 className="input"
                 min={1}
                 max={999}
@@ -718,7 +724,7 @@ export function PropertyPanel() {
       {selMaskPics.length > 0 && (
         <>
           <h3 className="section-header section-header--open">
-            {selMaskPics.length === 1 ? `Mask #${selMaskPicIndices[0]}` : `${selMaskPics.length} Masks`}
+            {selMaskPics.length === 1 ? `Mask ${selMaskPics[0]!.id.slice(0, 6)}` : `${selMaskPics.length} Masks`}
           </h3>
           <div className="accordion-body">
             {selMaskPics.length === 1 && (
@@ -730,7 +736,7 @@ export function PropertyPanel() {
               Texture
               <select
                 value={commonTexture ?? ''}
-                onChange={(e) => updatePictures(selMaskPicIndices, { texture: e.target.value })}
+                onChange={(e) => updatePictures(selMaskPicIds, { texture: e.target.value })}
                 className="select"
               >
                 {commonTexture === undefined && <option value="">Mixed</option>}
@@ -743,7 +749,7 @@ export function PropertyPanel() {
               Mask
               <select
                 value={commonMask ?? ''}
-                onChange={(e) => updatePictures(selMaskPicIndices, { mask: e.target.value })}
+                onChange={(e) => updatePictures(selMaskPicIds, { mask: e.target.value })}
                 className="select"
               >
                 {commonMask === undefined && <option value="">Mixed</option>}
@@ -756,7 +762,7 @@ export function PropertyPanel() {
               Clipping
               <select
                 value={commonMaskClip ?? ''}
-                onChange={(e) => updatePictures(selMaskPicIndices, { clip: Number(e.target.value) as Clip })}
+                onChange={(e) => updatePictures(selMaskPicIds, { clip: Number(e.target.value) as Clip })}
                 className="select"
               >
                 {commonMaskClip === undefined && <option value="">Mixed</option>}
@@ -770,7 +776,7 @@ export function PropertyPanel() {
               <input
                 type="number"
                 value={commonMaskDist ?? ''}
-                onChange={(e) => updatePictures(selMaskPicIndices, { distance: Number(e.target.value) })}
+                onChange={(e) => updatePictures(selMaskPicIds, { distance: Number(e.target.value) })}
                 className="input"
                 min={1}
                 max={999}

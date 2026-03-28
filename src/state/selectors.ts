@@ -15,9 +15,9 @@ export const useHasSelection = () =>
   useEditorStore((s) => {
     const sel = s.selection;
     return (
-      sel.polygonIndices.size > 0 ||
-      sel.objectIndices.size > 0 ||
-      sel.vertexIndices.size > 0
+      sel.polygonIds.size > 0 ||
+      sel.objectIds.size > 0 ||
+      sel.vertexSelections.size > 0
     );
   });
 

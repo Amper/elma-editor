@@ -5,6 +5,7 @@ import { Toolbar } from '@/components/Toolbar';
 import { PropertyPanel } from '@/components/PropertyPanel';
 import { PropertiesPanel } from '@/components/PropertiesPanel';
 import { LibraryPanel } from '@/components/LibraryPanel';
+import { CollabPanel } from '@/components/CollabPanel';
 import { LevelScreen } from '@/components/LevelScreen';
 import { StatusBar } from '@/components/StatusBar';
 import { GameOverlay } from '@/game/GameOverlay';
@@ -43,6 +44,8 @@ export function App() {
   const showStatusBar = useEditorStore((s) => s.showStatusBar);
   const setShowStatusBar = useEditorStore((s) => s.setShowStatusBar);
 
+  const showCollabPanel = useEditorStore((s) => s.showCollabPanel);
+
   const showLibraryPanel = useLibraryStore((s) => s.showLibraryPanel);
 
   const [actionsBarCtx, setActionsBarCtx] = useState<{ x: number; y: number } | null>(null);
@@ -70,7 +73,7 @@ export function App() {
     return () => window.removeEventListener('keydown', onKey);
   }, [actionsBarCtx, statusBarCtx]);
 
-  const hasSelection = selection.polygonIndices.size > 0 || selection.objectIndices.size > 0 || selection.pictureIndices.size > 0;
+  const hasSelection = selection.polygonIds.size > 0 || selection.objectIds.size > 0 || selection.pictureIds.size > 0;
   const showToolPanel = !!level && !toolPanelCollapsed && (hasSelection || TOOLS_WITH_PANEL.has(activeTool));
   const showChrome = !isTesting && !showLevelScreen;
 
@@ -119,6 +122,7 @@ export function App() {
         {isTesting && <GameOverlay />}
         {showLevelScreen && <LevelScreen />}
         <Minimap />
+        <CollabPanel hidden={!showCollabPanel} />
       </div>
       {showChrome && (
         <>

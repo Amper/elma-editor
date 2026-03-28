@@ -7,4 +7,7 @@ declare module 'elmajs' {
   interface ElmaObject {
     id: string;
   }
+  interface Picture {
+    id: string;
+  }
 }

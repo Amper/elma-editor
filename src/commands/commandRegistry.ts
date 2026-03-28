@@ -35,11 +35,11 @@ function hasLevel(): boolean {
 
 function hasSelection(): boolean {
   const s = useEditorStore.getState().selection;
-  return s.polygonIndices.size > 0 || s.objectIndices.size > 0 || s.pictureIndices.size > 0;
+  return s.polygonIds.size > 0 || s.objectIds.size > 0 || s.pictureIds.size > 0;
 }
 
 function hasPolygonSelection(): boolean {
-  return useEditorStore.getState().selection.polygonIndices.size > 0;
+  return useEditorStore.getState().selection.polygonIds.size > 0;
 }
 
 export const COMMANDS: Command[] = [
@@ -115,9 +115,9 @@ export const COMMANDS: Command[] = [
     execute: () => {
       const s = useEditorStore.getState();
       const sel = s.selection;
-      if (sel.objectIndices.size > 0) s.removeObjects([...sel.objectIndices]);
-      if (sel.pictureIndices.size > 0) s.removePictures([...sel.pictureIndices]);
-      if (sel.polygonIndices.size > 0) s.removePolygons([...sel.polygonIndices]);
+      if (sel.objectIds.size > 0) s.removeObjects([...sel.objectIds]);
+      if (sel.pictureIds.size > 0) s.removePictures([...sel.pictureIds]);
+      if (sel.polygonIds.size > 0) s.removePolygons([...sel.polygonIds]);
     },
     isEnabled: hasSelection },
 
@@ -126,29 +126,27 @@ export const COMMANDS: Command[] = [
     execute: () => {
       const store = useEditorStore.getState();
       if (!store.level) return;
-      const visiblePolyIndices = store.level.polygons
-        .map((_p: any, i: number) => ({ _p, i }))
-        .filter(({ _p }: any) => store.showGrass || !_p.grass)
-        .map(({ i }: any) => i);
+      const visiblePolygons = store.level.polygons.filter(
+        (p: any) => store.showGrass || !p.grass,
+      );
       store.setSelection({
-        polygonIndices: new Set(visiblePolyIndices),
-        vertexIndices: new Map(
-          visiblePolyIndices.map((i: number) => [
-            i,
-            new Set(store.level!.polygons[i]!.vertices.map((_: any, vi: number) => vi)),
+        polygonIds: new Set(visiblePolygons.map((p: any) => p.id)),
+        vertexSelections: new Map(
+          visiblePolygons.map((p: any) => [
+            p.id,
+            new Set(p.vertices.map((_: any, vi: number) => vi)),
           ]),
         ),
-        objectIndices: store.showObjects
-          ? new Set(store.level.objects.map((_: any, i: number) => i))
-          : new Set<number>(),
-        pictureIndices: new Set(
+        objectIds: store.showObjects
+          ? new Set(store.level.objects.map((o: any) => o.id))
+          : new Set<string>(),
+        pictureIds: new Set(
           store.level.pictures
-            .map((p: any, i: number) => ({ p, i }))
-            .filter(({ p }: any) => {
+            .filter((p: any) => {
               const isTexMask = !!(p.texture && p.mask);
               return isTexMask ? store.showTextures : store.showPictures;
             })
-            .map(({ i }: any) => i),
+            .map((p: any) => p.id),
         ),
       });
     },
@@ -160,7 +158,7 @@ export const COMMANDS: Command[] = [
   // ── Polygon ──
   { id: 'polygon.merge', label: 'Merge Polygons', category: 'Polygon',
     execute: () => useEditorStore.getState().mergeSelectedPolygons(),
-    isEnabled: () => useEditorStore.getState().selection.polygonIndices.size >= 2 },
+    isEnabled: () => useEditorStore.getState().selection.polygonIds.size >= 2 },
   { id: 'polygon.split', label: 'Split Polygons', category: 'Polygon',
     execute: () => useEditorStore.getState().splitSelectedPolygons(),
     isEnabled: hasPolygonSelection },

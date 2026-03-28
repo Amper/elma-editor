@@ -8,6 +8,45 @@ import { loadLgrData } from '@/canvas/lgrCache';
 import { createGame, gameFrame, type GameState } from './engine/game/GameLoop';
 import type { LevelData } from './engine/level/Level';
 import { gameCameraRef } from './gameCameraRef';
+import { Vec2 } from './engine/core/Vec2';
+import type { MotorState } from './engine/physics/MotorState';
+import { MotorGravity } from './engine/physics/MotorState';
+import type { BikeSnapshot } from '@/collab/protocol';
+import { WHEEL_RADIUS, BIKE_RADIUS, WHEEL_MASS, WHEEL_INERTIA, BIKE_MASS, BIKE_INERTIA } from './engine/core/Constants';
+
+const BIKE_BROADCAST_INTERVAL = 50; // ~20Hz
+
+/** Extract a compact snapshot from the local bike's motor state. */
+function motorToSnapshot(motor: MotorState, alive: boolean): BikeSnapshot {
+  return {
+    bikeX: motor.bike.r.x, bikeY: motor.bike.r.y, bikeRot: motor.bike.rotation,
+    lwX: motor.leftWheel.r.x, lwY: motor.leftWheel.r.y, lwRot: motor.leftWheel.rotation,
+    rwX: motor.rightWheel.r.x, rwY: motor.rightWheel.r.y, rwRot: motor.rightWheel.rotation,
+    bodyX: motor.bodyR.x, bodyY: motor.bodyR.y,
+    headX: motor.headR.x, headY: motor.headR.y,
+    flipped: motor.flippedBike,
+    alive,
+  };
+}
+
+/** Recreate a MotorState from a network snapshot (positions only, no velocities). */
+function snapshotToMotor(snap: BikeSnapshot): MotorState {
+  return {
+    bike: { r: new Vec2(snap.bikeX, snap.bikeY), v: new Vec2(0, 0), rotation: snap.bikeRot, angularVelocity: 0, radius: BIKE_RADIUS, mass: BIKE_MASS, inertia: BIKE_INERTIA },
+    leftWheel: { r: new Vec2(snap.lwX, snap.lwY), v: new Vec2(0, 0), rotation: snap.lwRot, angularVelocity: 0, radius: WHEEL_RADIUS, mass: WHEEL_MASS, inertia: WHEEL_INERTIA },
+    rightWheel: { r: new Vec2(snap.rwX, snap.rwY), v: new Vec2(0, 0), rotation: snap.rwRot, angularVelocity: 0, radius: WHEEL_RADIUS, mass: WHEEL_MASS, inertia: WHEEL_INERTIA },
+    bodyR: new Vec2(snap.bodyX, snap.bodyY),
+    bodyV: new Vec2(0, 0),
+    headR: new Vec2(snap.headX, snap.headY),
+    flippedBike: snap.flipped,
+    flippedCamera: snap.flipped,
+    gravityDirection: MotorGravity.Down,
+    appleCount: 0, lastAppleTime: 0,
+    prevBrake: false, leftWheelBrakeRotation: 0, rightWheelBrakeRotation: 0,
+    voltingRight: false, voltingLeft: false, rightVoltTime: -1, leftVoltTime: -1,
+    angularVelocityPreRightVolt: -1, angularVelocityPreLeftVolt: -1,
+  };
+}
 
 export function GameOverlay() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -104,12 +143,57 @@ export function GameOverlay() {
 
     const renderOpts = { showGrass: tc.showGrass, showPictures: tc.showPictures, showTextures: tc.showTextures, objectsAnimation: tc.objectsAnimation };
 
+    // Notify collab server that testing started
+    const collabClient = useEditorStore.getState().collabClient;
+    if (collabClient?.connected) {
+      collabClient.send({ type: 'testingStarted' });
+    }
+
+    let lastBikeBroadcast = 0;
+
     const loop = (timestamp: number) => {
       gameFrame(gameState, timestamp);
       gameCameraRef.x = gameState.camera.x;
       gameCameraRef.y = gameState.camera.y;
       gameCameraRef.active = true;
       renderer.render(gameState, renderOpts);
+
+      // Render remote bikes
+      const store = useEditorStore.getState();
+      if (store.isCollaborating) {
+        for (const user of store.remoteUsers.values()) {
+          if (user.isTesting && user.bikeState) {
+            try {
+              const remoteMotor = snapshotToMotor(user.bikeState);
+              if (isWebGL) {
+                const webgl = renderer as WebGLRenderer;
+                const viewProj = webgl.glCtx.buildViewProjection(
+                  gameState.camera.x, gameState.camera.y,
+                  PIXELS_PER_METER * gameState.camera.zoom,
+                );
+                webgl.bikeRenderer.alpha = 0.8;
+                webgl.bikeRenderer.draw(remoteMotor, viewProj, renderOpts.showTextures);
+                webgl.bikeRenderer.alpha = 1.0;
+              } else {
+                (renderer as CanvasRenderer).drawRemoteBike(remoteMotor, gameState.camera, 0.8);
+              }
+            } catch {
+              // silently skip render errors for remote bikes
+            }
+          }
+        }
+
+        // Broadcast local bike state throttled
+        const now = performance.now();
+        if (now - lastBikeBroadcast > BIKE_BROADCAST_INTERVAL) {
+          lastBikeBroadcast = now;
+          const client = store.collabClient;
+          if (client?.connected) {
+            const alive = gameState.result === 'playing';
+            client.send({ type: 'bikeState', bike: motorToSnapshot(gameState.motor, alive) });
+          }
+        }
+      }
 
       // Restart key restarts the game at any time
       if (input.wasJustPressed(tc.restartKey)) {
@@ -168,6 +252,11 @@ export function GameOverlay() {
       input.destroy();
       if (isWebGL) {
         (renderer as WebGLRenderer).destroy();
+      }
+      // Notify collab server that testing stopped
+      const client = useEditorStore.getState().collabClient;
+      if (client?.connected) {
+        client.send({ type: 'testingStopped' });
       }
     };
   }, []);

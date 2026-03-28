@@ -83,14 +83,13 @@ precision mediump float;
 in vec2 v_uv;
 uniform sampler2D u_atlas;
 uniform vec4 u_uvRect;
+uniform float u_alpha;
 out vec4 fragColor;
 void main() {
-  // Flip V: PCX row 0 is image-top stored at V=0 in GPU.
-  // extentV points up in world, so v_uv.y=0 is world-bottom.
-  // We want world-bottom → image-bottom (high V), world-top → image-top (low V).
   vec2 texCoord = u_uvRect.xy + vec2(v_uv.x, 1.0 - v_uv.y) * u_uvRect.zw;
   fragColor = texture(u_atlas, texCoord);
   if (fragColor.a < 0.01) discard;
+  fragColor.a *= u_alpha;
 }
 `;
 
@@ -149,8 +148,10 @@ void main() {
 export const FALLBACK_FRAG = `#version 300 es
 precision mediump float;
 uniform vec4 u_color;
+uniform float u_alpha;
 out vec4 fragColor;
 void main() {
   fragColor = u_color;
+  fragColor.a *= u_alpha;
 }
 `;

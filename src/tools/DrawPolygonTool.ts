@@ -274,7 +274,7 @@ export class DrawPolygonTool implements EditorTool {
 
     // Begin undo batch before removing
     store.beginUndoBatch();
-    store.removePolygons([hit.polygonIndex]);
+    store.removePolygons([hit.polygonId]);
 
     this.vertices = rotated;
     this.lockedVertexCount = n;

@@ -60,19 +60,19 @@ export function CanvasContextMenu({ x, y, onClose }: Props) {
 
   const [showSaveModal, setShowSaveModal] = useState(false);
 
-  const hasSelection = selection.polygonIndices.size > 0 || selection.objectIndices.size > 0 || selection.pictureIndices.size > 0;
+  const hasSelection = selection.polygonIds.size > 0 || selection.objectIds.size > 0 || selection.pictureIds.size > 0;
   const canPaste = clipboard !== null;
-  const canMerge = selection.polygonIndices.size >= 1;
-  const canSplit = selection.polygonIndices.size >= 1 && selection.polygonIndices.size <= 2;
-  const canAutoGrass = level != null && [...selection.polygonIndices].some(
-    (i) => level.polygons[i] && !level.polygons[i]!.grass,
+  const canMerge = selection.polygonIds.size >= 1;
+  const canSplit = selection.polygonIds.size >= 1 && selection.polygonIds.size <= 2;
+  const canAutoGrass = level != null && level.polygons.some(
+    (p) => selection.polygonIds.has(p.id) && !p.grass,
   );
   const canEditVertices = activeTool === ToolId.Select && toggleSelectVertexEditing != null &&
-    (selectVertexEditing || selection.polygonIndices.size === 1);
+    (selectVertexEditing || selection.polygonIds.size === 1);
 
   const deleteSelection = () => {
-    if (selection.objectIndices.size > 0) removeObjects([...selection.objectIndices]);
-    if (selection.polygonIndices.size > 0) removePolygons([...selection.polygonIndices]);
+    if (selection.objectIds.size > 0) removeObjects([...selection.objectIds]);
+    if (selection.polygonIds.size > 0) removePolygons([...selection.polygonIds]);
   };
 
   const handleSaveToLibrary = () => {

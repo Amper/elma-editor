@@ -110,6 +110,7 @@ export class PictureRenderer {
     if (showPictures && regularSprites.length > 0) {
       ctx.useProgram(ctx.spriteProgram);
       ctx.setUniform(ctx.spriteProgram, 'u_viewProjection', viewProj);
+      ctx.setUniform(ctx.spriteProgram, 'u_alpha', 1.0);
       gl.activeTexture(gl.TEXTURE0);
       gl.bindTexture(gl.TEXTURE_2D, this.atlas.texture);
       ctx.setUniformInt(ctx.spriteProgram, 'u_atlas', 0);

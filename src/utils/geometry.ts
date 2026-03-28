@@ -77,6 +77,7 @@ export function hitTest(
         best = {
           kind: 'vertex',
           polygonIndex: pi,
+          polygonId: polygons[pi]!.id,
           vertexIndex: vi,
           position: verts[vi]!,
         };
@@ -95,6 +96,7 @@ export function hitTest(
         best = {
           kind: 'object',
           objectIndex: oi,
+          objectId: objects[oi]!.id,
           position: objects[oi]!.position,
         };
       }
@@ -123,7 +125,7 @@ export function hitTest(
         const d = distance(worldPos, center);
         if (d < bestDist || best.kind === 'none') {
           bestDist = d;
-          best = { kind: 'picture', pictureIndex: pi, position: pic.position };
+          best = { kind: 'picture', pictureIndex: pi, pictureId: pic.id, position: pic.position };
         }
       }
     }
@@ -150,6 +152,7 @@ export function hitTest(
           best = {
             kind: 'edge',
             polygonIndex: pi,
+            polygonId: polygons[pi]!.id,
             edgeIndex: ei,
             position: pos,
             t,
@@ -183,6 +186,7 @@ export function hitTest(
       best = {
         kind: 'polygon',
         polygonIndex: bestPoly,
+        polygonId: polygons[bestPoly]!.id,
         position: worldPos,
       };
     }

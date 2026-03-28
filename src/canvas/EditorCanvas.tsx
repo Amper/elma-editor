@@ -1,6 +1,8 @@
 import { useRef, useEffect, useCallback, useState } from 'react';
 import { useEditorStore } from '@/state/editorStore';
 import { renderFrame } from './renderer';
+import { renderRemoteUsers } from './renderOverlays';
+import { broadcastAwareness } from '@/collab/awareness';
 import { screenToWorld, zoomAtPoint, panByScreenDelta, fitLevel } from './viewport';
 import { ToolManager } from '@/tools/ToolManager';
 import type { CanvasPointerEvent } from '@/tools/Tool';
@@ -42,6 +44,9 @@ export function EditorCanvas() {
   const showTextures = useEditorStore((s) => s.showTextures);
   const showObjects = useEditorStore((s) => s.showObjects);
   const objectsAnimation = useEditorStore((s) => s.objectsAnimation);
+  const remoteUsers = useEditorStore((s) => s.remoteUsers);
+  const collabClient = useEditorStore((s) => s.collabClient);
+  const isCollaborating = useEditorStore((s) => s.isCollaborating);
 
   // Sync tool manager with store's active tool
   useEffect(() => {
@@ -121,11 +126,26 @@ export function EditorCanvas() {
         ctx.restore();
       }
 
+      // Draw remote user cursors and selections
+      if (level && isCollaborating && remoteUsers.size > 0) {
+        const dpr = window.devicePixelRatio || 1;
+        ctx.save();
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        const cssW = canvas.width / dpr;
+        const cssH = canvas.height / dpr;
+        const toScreen = (p: { x: number; y: number }) => ({
+          x: cssW / 2 + (p.x - viewport.centerX) * viewport.zoom,
+          y: cssH / 2 + (p.y - viewport.centerY) * viewport.zoom,
+        });
+        renderRemoteUsers(ctx, remoteUsers, level, toScreen);
+        ctx.restore();
+      }
+
       animFrameRef.current = requestAnimationFrame(draw);
     };
     animFrameRef.current = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(animFrameRef.current);
-  }, [level, viewport, selection, grid, topologyErrors, activeTool, showGrass, showPictures, showTextures, showObjects, objectsAnimation]);
+  }, [level, viewport, selection, grid, topologyErrors, activeTool, showGrass, showPictures, showTextures, showObjects, objectsAnimation, isCollaborating, remoteUsers]);
 
   // ── Mouse wheel -> zoom ──
   useEffect(() => {
@@ -337,6 +357,12 @@ export function EditorCanvas() {
       // Update cursor world position for status bar
       const pe = makePointerEvent(e);
       useEditorStore.getState().setCursorWorld(pe.worldPos);
+
+      // Broadcast cursor position for collaboration
+      {
+        const store = useEditorStore.getState();
+        broadcastAwareness(store.collabClient, pe.worldPos, store.selection, store.activeTool);
+      }
 
       // Middle-mouse pan
       if (isPanningRef.current) {
@@ -560,29 +586,27 @@ export function EditorCanvas() {
         e.preventDefault();
         const store = useEditorStore.getState();
         if (!store.level) return;
-        const visiblePolyIndices = store.level.polygons
-          .map((p, i) => ({ p, i }))
-          .filter(({ p }) => store.showGrass || !p.grass)
-          .map(({ i }) => i);
+        const visiblePolygons = store.level.polygons.filter(
+          (p) => store.showGrass || !p.grass,
+        );
         const sel = {
-          polygonIndices: new Set(visiblePolyIndices),
-          vertexIndices: new Map(
-            visiblePolyIndices.map((i) => [
-              i,
-              new Set(store.level!.polygons[i]!.vertices.map((_, vi) => vi)),
+          polygonIds: new Set(visiblePolygons.map((p) => p.id)),
+          vertexSelections: new Map(
+            visiblePolygons.map((p) => [
+              p.id,
+              new Set(p.vertices.map((_, vi) => vi)),
             ]),
           ),
-          objectIndices: store.showObjects
-            ? new Set(store.level.objects.map((_, i) => i))
-            : new Set<number>(),
-          pictureIndices: new Set(
+          objectIds: store.showObjects
+            ? new Set(store.level.objects.map((o) => o.id))
+            : new Set<string>(),
+          pictureIds: new Set(
             store.level.pictures
-              .map((p, i) => ({ p, i }))
-              .filter(({ p }) => {
+              .filter((p) => {
                 const isTexMask = !!(p.texture && p.mask);
                 return isTexMask ? store.showTextures : store.showPictures;
               })
-              .map(({ i }) => i),
+              .map((p) => p.id),
           ),
         };
         store.setSelection(sel);
