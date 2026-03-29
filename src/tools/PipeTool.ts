@@ -181,7 +181,7 @@ export class PipeTool implements EditorTool {
   }
 
   wantsContextMenu(): boolean {
-    return this.spine.length === 0;
+    return false;
   }
 
   // ── Private helpers ──

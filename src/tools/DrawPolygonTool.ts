@@ -247,7 +247,7 @@ export class DrawPolygonTool implements EditorTool {
   }
 
   wantsContextMenu(): boolean {
-    return this.vertices.length === 0 && !this.continuationMode;
+    return false;
   }
 
   // ── Continuation mode ───────────────────────────────────────────────────────
