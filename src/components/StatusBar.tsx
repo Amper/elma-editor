@@ -62,7 +62,19 @@ export function StatusBar() {
               </div>
               <ul className="validation-panel__list">
                 {topologyErrors.map((err, i) => (
-                  <li key={i} className="validation-panel__item">
+                  <li
+                    key={i}
+                    className={`validation-panel__item${err.position ? ' validation-panel__item--clickable' : ''}`}
+                    onClick={() => {
+                      if (err.position) {
+                        useEditorStore.getState().setViewport({
+                          centerX: err.position.x,
+                          centerY: err.position.y,
+                          zoom: 200,
+                        });
+                      }
+                    }}
+                  >
                     {err.message}
                   </li>
                 ))}
