@@ -577,6 +577,13 @@ export function EditorCanvas() {
         return;
       }
 
+      // Collab panel toggle
+      if (e.key.toLowerCase() === 'c' && !ctrl && !e.altKey) {
+        const store = useEditorStore.getState();
+        store.setShowCollabPanel(!store.showCollabPanel);
+        return;
+      }
+
       // Tool shortcuts (only when a level is loaded)
       if (!ctrl && !e.altKey && useEditorStore.getState().level) {
         const toolMap: Record<string, ToolId> = {

@@ -215,6 +215,12 @@ export const COMMANDS: Command[] = [
       s.setShowLevelScreen(!s.showLevelScreen);
     },
     isEnabled: () => true },
+  { id: 'view.collab', label: 'Toggle Collab Panel', category: 'View', shortcut: 'C',
+    execute: () => {
+      const s = useEditorStore.getState();
+      s.setShowCollabPanel(!s.showCollabPanel);
+    },
+    isEnabled: () => true },
 
   // ── Testing ──
   { id: 'testing.start', label: 'Start Test', category: 'Testing',
