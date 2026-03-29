@@ -7,6 +7,7 @@ import type {
   ResizeHandleId,
   FrameHandleHit,
   TransformFrame,
+  TrajectoryPoint,
 } from '@/types';
 import {
   hitTest,
@@ -55,6 +56,14 @@ export class SelectTool implements EditorTool {
   // ── Rotation state ──
   private rotationCenter: Vec2 = { x: 0, y: 0 };
   private rotationStartPos: Vec2 = { x: 0, y: 0 };
+
+  // ── Trajectory hover ──
+  private hoveredTrajectoryIdx: number = -1;
+
+  // ── Debug start drag ──
+  private movingDebugStart: boolean = false;
+  private debugStartMoveOrigin: Vec2 = { x: 0, y: 0 };
+  private debugStartOriginalPos: Vec2 = { x: 0, y: 0 };
 
   // ── Double-click detection ──
   private lastClickTime: number = 0;
@@ -153,8 +162,17 @@ export class SelectTool implements EditorTool {
       // so that unselected polygons inside the frame can still be clicked
     }
 
-    // 2. Normal level hit-testing
+    // 2. Trajectory click takes priority (rendered on top of everything)
     const captureRadius = 10 / zoom;
+    if (this.hoveredTrajectoryIdx >= 0 && store.debugTrajectory) {
+      const p = store.debugTrajectory[this.hoveredTrajectoryIdx];
+      if (p) {
+        this.applyTrajectoryPointAsDebugStart(p, store);
+      }
+      return;
+    }
+
+    // 3. Normal level hit-testing
     const vis = { showGrass: store.showGrass, showObjects: store.showObjects, showPictures: store.showPictures, showTextures: store.showTextures };
     const hit = hitTest(
       e.worldPos,
@@ -163,12 +181,30 @@ export class SelectTool implements EditorTool {
       captureRadius,
       store.level.pictures,
       vis,
+      store.debugStart,
     );
 
     // Double-click on polygon → enter vertex editing
     if (isDoubleClick && (hit.kind === 'vertex' || hit.kind === 'edge' || hit.kind === 'polygon')) {
       this.enterVertexEditing(hit.polygonIndex, store);
       return;
+    }
+
+    if (hit.kind === 'debugStart') {
+      // Select the debug start, clear normal selection
+      store.clearSelection();
+      store.setDebugStartSelected(true);
+      // Start drag
+      this.movingDebugStart = true;
+      this.debugStartMoveOrigin = e.worldPos;
+      this.debugStartOriginalPos = { ...store.debugStart!.position };
+      this.state = 'moving';
+      return;
+    }
+
+    // Clear debug start selection when clicking elsewhere
+    if (store.debugStartSelected) {
+      store.setDebugStartSelected(false);
     }
 
     if (hit.kind === 'vertex' || hit.kind === 'edge') {
@@ -220,6 +256,7 @@ export class SelectTool implements EditorTool {
       // Empty space outside the frame — start rubber-band
       if (!e.shiftKey) {
         store.clearSelection();
+        if (store.debugStartSelected) store.setDebugStartSelected(false);
       }
       this.state = 'rubber-band';
       this.dragStart = e.worldPos;
@@ -236,6 +273,18 @@ export class SelectTool implements EditorTool {
     }
 
     if (this.state === 'moving') {
+      // Debug start drag
+      if (this.movingDebugStart) {
+        const dx = e.worldPos.x - this.debugStartMoveOrigin.x;
+        const dy = e.worldPos.y - this.debugStartMoveOrigin.y;
+        const snapped = snapToGrid(
+          { x: this.debugStartOriginalPos.x + dx, y: this.debugStartOriginalPos.y + dy },
+          store.grid,
+        );
+        store.updateDebugStart({ position: { x: snapped.x, y: snapped.y } });
+        return;
+      }
+
       const dx = e.worldPos.x - this.moveStartWorld.x;
       const dy = e.worldPos.y - this.moveStartWorld.y;
 
@@ -290,20 +339,29 @@ export class SelectTool implements EditorTool {
 
       // Normal level hover tracking
       const captureRadius = 10 / store.viewport.zoom;
-      const vis = { showGrass: store.showGrass, showObjects: store.showObjects, showPictures: store.showPictures, showTextures: store.showTextures };
-      this.hoveredHit = hitTest(
-        e.worldPos,
-        store.level.polygons,
-        store.level.objects,
-        captureRadius,
-        store.level.pictures,
-        vis,
-      );
 
-      // If hovering over an unselected element inside the frame,
-      // clear the 'inside' frame hit so the cursor shows 'pointer' not 'move'
-      if (this.hoveredHit.kind !== 'none' && !this.isHoverSelected(store)) {
-        this.hoveredFrameHit = { kind: 'none' };
+      // Trajectory hover takes priority (it's rendered on top of everything)
+      this.hoveredTrajectoryIdx = this.findNearestTrajectoryPoint(e.worldPos, store.debugTrajectory, captureRadius);
+
+      if (this.hoveredTrajectoryIdx >= 0) {
+        this.hoveredHit = { kind: 'none' };
+      } else {
+        const vis = { showGrass: store.showGrass, showObjects: store.showObjects, showPictures: store.showPictures, showTextures: store.showTextures };
+        this.hoveredHit = hitTest(
+          e.worldPos,
+          store.level.polygons,
+          store.level.objects,
+          captureRadius,
+          store.level.pictures,
+          vis,
+          store.debugStart,
+        );
+
+        // If hovering over an unselected element inside the frame,
+        // clear the 'inside' frame hit so the cursor shows 'pointer' not 'move'
+        if (this.hoveredHit.kind !== 'none' && !this.isHoverSelected(store)) {
+          this.hoveredFrameHit = { kind: 'none' };
+        }
       }
     }
   }
@@ -320,7 +378,11 @@ export class SelectTool implements EditorTool {
     }
 
     if (this.state === 'moving' || this.state === 'resizing' || this.state === 'rotating') {
-      this.getStore().endUndoBatch();
+      if (this.movingDebugStart) {
+        this.movingDebugStart = false;
+      } else {
+        this.getStore().endUndoBatch();
+      }
     } else if (this.state === 'rubber-band') {
       this.commitRubberBand();
     }
@@ -388,6 +450,10 @@ export class SelectTool implements EditorTool {
     // Hover highlight when idle
     if (this.state === 'idle') {
       this.renderHoverHighlight(ctx, store, zoom);
+      // Trajectory point hover
+      if (this.hoveredTrajectoryIdx >= 0 && store.debugTrajectory) {
+        this.renderTrajectoryHover(ctx, store.debugTrajectory, this.hoveredTrajectoryIdx, zoom);
+      }
     }
 
     // Rubber-band rectangle
@@ -439,6 +505,10 @@ export class SelectTool implements EditorTool {
       // Level hover
       if (this.hoveredHit.kind !== 'none') {
         return this.isHoverSelected(this.getStore()) ? 'move' : 'pointer';
+      }
+      // Trajectory hover
+      if (this.hoveredTrajectoryIdx >= 0) {
+        return 'pointer';
       }
     }
     return 'default';
@@ -829,6 +899,19 @@ export class SelectTool implements EditorTool {
         ctx.strokeRect(pic.position.x, pic.position.y, w, h);
         ctx.setLineDash([]);
       }
+    } else if (hit.kind === 'debugStart') {
+      ctx.beginPath();
+      ctx.arc(hit.position.x, hit.position.y, OBJECT_RADIUS + 0.08, 0, Math.PI * 2);
+      if (store.debugStartSelected) {
+        ctx.strokeStyle = withAlpha(t.selection, 0.8);
+        ctx.lineWidth = 2 / zoom;
+      } else {
+        ctx.setLineDash([4 / zoom, 3 / zoom]);
+        ctx.strokeStyle = withAlpha(t.selection, 0.5);
+        ctx.lineWidth = 1.5 / zoom;
+      }
+      ctx.stroke();
+      ctx.setLineDash([]);
     }
   }
 
@@ -966,12 +1049,19 @@ export class SelectTool implements EditorTool {
     }
 
     store.setSelection(sel);
+
+    // Select debug start if its position is inside the rubber-band
+    if (store.debugStart) {
+      const dp = store.debugStart.position;
+      if (dp.x >= minX && dp.x <= maxX && dp.y >= minY && dp.y <= maxY) {
+        store.setDebugStartSelected(true);
+      }
+    }
   }
 
   private nudgeSelection(key: string, shift: boolean) {
     const store = this.getStore();
     if (!store.level) return;
-    const sel = store.selection;
 
     const MAJOR_EVERY = 5;
     const step = shift ? store.grid.size * MAJOR_EVERY : store.grid.size;
@@ -982,6 +1072,19 @@ export class SelectTool implements EditorTool {
     else if (key === 'ArrowRight') dx = step;
     else if (key === 'ArrowUp') dy = -step;
     else if (key === 'ArrowDown') dy = step;
+
+    // Nudge debug start if selected
+    if (store.debugStartSelected && store.debugStart) {
+      store.updateDebugStart({
+        position: {
+          x: store.debugStart.position.x + dx,
+          y: store.debugStart.position.y + dy,
+        },
+      });
+      return;
+    }
+
+    const sel = store.selection;
 
     const vertMoves: Array<{ polyId: string; vertIdx: number; newPos: Vec2 }> = [];
     for (const [polyId, vertSet] of sel.vertexSelections) {
@@ -1013,6 +1116,13 @@ export class SelectTool implements EditorTool {
   private deleteSelected() {
     const store = this.getStore();
     if (!store.level) return;
+
+    // Delete debug start if selected
+    if (store.debugStartSelected) {
+      store.removeDebugStart();
+      return;
+    }
+
     const sel = store.selection;
 
     if (sel.pictureIds.size > 0) {
@@ -1024,6 +1134,116 @@ export class SelectTool implements EditorTool {
     if (sel.polygonIds.size > 0) {
       store.removePolygons([...sel.polygonIds]);
     }
+  }
+
+  // ── Trajectory rendering ───────────────────────────────────────────────
+
+  private renderTrajectoryHover(
+    ctx: CanvasRenderingContext2D,
+    trajectory: TrajectoryPoint[],
+    idx: number,
+    zoom: number,
+  ): void {
+    const p = trajectory[idx];
+    if (!p) return;
+
+    const r = 0.15;
+
+    // Highlight circles on all 3 tracks
+    ctx.globalAlpha = 0.8;
+    const tracks: Array<{ x: number; y: number; color: string; label: string }> = [
+      { x: p.headX, y: p.headY, color: 'rgba(255,100,100,0.9)', label: 'H' },
+      { x: p.lwX, y: p.lwY, color: 'rgba(100,100,255,0.9)', label: 'L' },
+      { x: p.rwX, y: p.rwY, color: 'rgba(100,255,100,0.9)', label: 'R' },
+    ];
+    for (const t of tracks) {
+      ctx.beginPath();
+      ctx.arc(t.x, t.y, r, 0, Math.PI * 2);
+      ctx.strokeStyle = t.color;
+      ctx.lineWidth = 0.03;
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1.0;
+
+    // Info tooltip near the bike center
+    const speed = Math.sqrt(p.speedX * p.speedX + p.speedY * p.speedY);
+    const angleDeg = Math.round((p.rotation * 180) / Math.PI);
+    const dir = p.flipped ? 'Left' : 'Right';
+    const grav = p.gravityDirection;
+    const lines = [
+      `Angle: ${angleDeg}°  Dir: ${dir}`,
+      `Speed: ${speed.toFixed(1)}  Grav: ${grav}`,
+    ];
+
+    // Draw tooltip background
+    const fontSize = 11 / zoom;
+    ctx.font = `${fontSize}px sans-serif`;
+    const padding = 4 / zoom;
+    const lineHeight = fontSize * 1.3;
+    const textWidth = Math.max(...lines.map((l) => ctx.measureText(l).width));
+    const boxW = textWidth + padding * 2;
+    const boxH = lineHeight * lines.length + padding * 2;
+    const boxX = p.bikeX + 0.3;
+    const boxY = p.bikeY - boxH - 0.1;
+
+    ctx.fillStyle = 'rgba(0,0,0,0.8)';
+    ctx.fillRect(boxX, boxY, boxW, boxH);
+
+    ctx.fillStyle = '#fff';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    for (let i = 0; i < lines.length; i++) {
+      ctx.fillText(lines[i]!, boxX + padding, boxY + padding + i * lineHeight);
+    }
+
+    // Crosshair at bike center
+    const ch = 0.2;
+    ctx.beginPath();
+    ctx.moveTo(p.bikeX - ch, p.bikeY);
+    ctx.lineTo(p.bikeX + ch, p.bikeY);
+    ctx.moveTo(p.bikeX, p.bikeY - ch);
+    ctx.lineTo(p.bikeX, p.bikeY + ch);
+    ctx.strokeStyle = '#e0a030';
+    ctx.lineWidth = 0.03;
+    ctx.stroke();
+  }
+
+  // ── Trajectory interaction ─────────────────────────────────────────────
+
+  /** Find the nearest trajectory point within captureRadius. Returns index or -1. */
+  private findNearestTrajectoryPoint(worldPos: Vec2, trajectory: TrajectoryPoint[] | null, captureRadius: number): number {
+    if (!trajectory || trajectory.length === 0) return -1;
+    let bestIdx = -1;
+    let bestDist = captureRadius;
+    for (let i = 0; i < trajectory.length; i++) {
+      const p = trajectory[i]!;
+      // Check all 3 tracks
+      const dHead = distance(worldPos, { x: p.headX, y: p.headY });
+      const dLw = distance(worldPos, { x: p.lwX, y: p.lwY });
+      const dRw = distance(worldPos, { x: p.rwX, y: p.rwY });
+      const d = Math.min(dHead, dLw, dRw);
+      if (d < bestDist) {
+        bestDist = d;
+        bestIdx = i;
+      }
+    }
+    return bestIdx;
+  }
+
+  /** Create or update debug start from a trajectory point. */
+  private applyTrajectoryPointAsDebugStart(p: TrajectoryPoint, store: EditorState): void {
+    const speed = Math.sqrt(p.speedX * p.speedX + p.speedY * p.speedY);
+    const speedAngle = speed > 0.001 ? (Math.atan2(p.speedY, p.speedX) * 180) / Math.PI : 0;
+    const angle = (p.rotation * 180) / Math.PI;
+    store.setDebugStart({
+      position: { x: p.bikeX, y: p.bikeY },
+      gravityDirection: p.gravityDirection,
+      flipped: p.flipped,
+      angle,
+      speed,
+      speedAngle,
+    });
+    store.setTestMode('debug');
   }
 
   // ── Vertex Editing Sub-Mode ──────────────────────────────────────────────

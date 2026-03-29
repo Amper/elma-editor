@@ -25,6 +25,7 @@ export type HitTestResult =
   | { kind: 'object'; objectIndex: number; objectId: string; position: Vec2 }
   | { kind: 'picture'; pictureIndex: number; pictureId: string; position: Vec2 }
   | { kind: 'polygon'; polygonIndex: number; polygonId: string; position: Vec2 }
+  | { kind: 'debugStart'; position: Vec2 }
   | { kind: 'none' };
 
 // ── Transform frame types ────────────────────────────────────────────────────

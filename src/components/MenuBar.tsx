@@ -1,8 +1,11 @@
+import { useState, useRef, useEffect } from 'react';
 import { useEditorStore } from '@/state/editorStore';
 import { undo, redo } from '@/state/selectors';
+import type { TestMode } from '@/types';
 import {
   ArrowUDownLeftIcon,
   ArrowUUpRightIcon,
+  CaretDownIcon,
   ClipboardIcon,
   CopyIcon, FarmIcon,
   FlipHorizontalIcon,
@@ -22,6 +25,101 @@ function keyLabel(code: string): string {
   return code;
 }
 
+function TestModeButton({
+  level,
+  isTesting,
+  testMode,
+  setTestMode,
+  startTesting,
+  testRestartKey,
+  hasDebugStart,
+  showIcon,
+  showLabel,
+  iconSize,
+}: {
+  level: boolean;
+  isTesting: boolean;
+  testMode: TestMode;
+  setTestMode: (mode: TestMode) => void;
+  startTesting: () => void;
+  testRestartKey: string;
+  hasDebugStart: boolean;
+  showIcon: boolean;
+  showLabel: boolean;
+  iconSize: number;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  const modeLabel = testMode === 'debug' ? 'Debug' : 'Normal';
+  const modeColor = testMode === 'debug' ? '#e0a030' : '#6cc66c';
+
+  return (
+    <div ref={ref} style={{ position: 'relative', display: 'inline-flex', alignSelf: 'stretch' }}>
+      <button
+        onClick={startTesting}
+        disabled={!level || isTesting}
+        title={`Test Level - ${modeLabel} (${keyLabel(testRestartKey)})`}
+        className="btn btn--text"
+        style={{ color: modeColor, fontWeight: 700, borderTopRightRadius: 0, borderBottomRightRadius: 0 }}
+      >
+        {showIcon && <PlayIcon size={iconSize} />}
+        {showLabel && <span className="btn--text-label">{testMode === 'debug' ? 'Debug' : 'Test'} ({keyLabel(testRestartKey)})</span>}
+      </button>
+      <button
+        onClick={() => setOpen(!open)}
+        disabled={!level || isTesting}
+        className="btn btn--text"
+        style={{ color: modeColor, padding: '0 4px', borderTopLeftRadius: 0, borderBottomLeftRadius: 0, borderLeft: '1px solid var(--color-border)' }}
+        title="Select test mode"
+      >
+        <CaretDownIcon size={10} />
+      </button>
+      {open && (
+        <div
+          style={{
+            position: 'absolute',
+            top: '100%',
+            left: 0,
+            zIndex: 100,
+            background: 'var(--color-bg-secondary)',
+            border: '1px solid var(--color-border)',
+            borderRadius: 4,
+            padding: 4,
+            minWidth: 140,
+            boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+          }}
+        >
+          <button
+            className="btn btn--text"
+            style={{ width: '100%', textAlign: 'left', padding: '6px 10px', color: testMode === 'normal' ? '#6cc66c' : undefined, fontWeight: testMode === 'normal' ? 700 : 400 }}
+            onClick={() => { setTestMode('normal'); setOpen(false); }}
+          >
+            Normal
+          </button>
+          <button
+            className="btn btn--text"
+            style={{ width: '100%', textAlign: 'left', padding: '6px 10px', color: testMode === 'debug' ? '#e0a030' : undefined, fontWeight: testMode === 'debug' ? 700 : 400, opacity: hasDebugStart ? 1 : 0.5 }}
+            onClick={() => { setTestMode('debug'); setOpen(false); }}
+            title={hasDebugStart ? 'Start from Debug Start position' : 'Place a Debug Start object first'}
+          >
+            Debug {!hasDebugStart && '(no start)'}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function MenuBar() {
   const level = useEditorStore((s) => s.level);
   const selection = useEditorStore((s) => s.selection);
@@ -32,6 +130,9 @@ export function MenuBar() {
   const cutSelection = useEditorStore((s) => s.cutSelection);
   const pasteClipboard = useEditorStore((s) => s.pasteClipboard);
   const startTesting = useEditorStore((s) => s.startTesting);
+  const testMode = useEditorStore((s) => s.testMode);
+  const setTestMode = useEditorStore((s) => s.setTestMode);
+  const debugStart = useEditorStore((s) => s.debugStart);
   const mergeSelectedPolygons = useEditorStore((s) => s.mergeSelectedPolygons);
   const splitSelectedPolygons = useEditorStore((s) => s.splitSelectedPolygons);
   const autoGrassSelectedPolygons = useEditorStore((s) => s.autoGrassSelectedPolygons);
@@ -96,10 +197,18 @@ export function MenuBar() {
         {showLabel && <span className="btn--text-label">Paste</span>}
       </button>
       <span className="separator" />
-      <button onClick={startTesting} disabled={!level || isTesting} title={`Test Level (${keyLabel(testRestartKey)})`} className="btn btn--text" style={{ color: '#6cc66c', fontWeight: 700 }}>
-        {showIcon && <PlayIcon size={iconSize} />}
-        {showLabel && <span className="btn--text-label">Test / Play ({keyLabel(testRestartKey)})</span>}
-      </button>
+      <TestModeButton
+        level={!!level}
+        isTesting={isTesting}
+        testMode={testMode}
+        setTestMode={setTestMode}
+        startTesting={startTesting}
+        testRestartKey={testRestartKey}
+        hasDebugStart={!!debugStart}
+        showIcon={showIcon}
+        showLabel={showLabel}
+        iconSize={iconSize}
+      />
       {hasSelection && (
         <>
           <span className="separator" />

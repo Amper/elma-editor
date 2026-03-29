@@ -95,6 +95,37 @@ export interface ShapeConfig {
 /** Shape types that use rubber band (bounding box) interaction. */
 export const RUBBER_BAND_SHAPES = new Set<ShapeType>(['rectangle', 'trapezoid', 'parallelogram', 'ellipse']);
 
+/** Test mode: normal uses regular Start, debug uses Debug Start. */
+export type TestMode = 'normal' | 'debug';
+
+/** Virtual debug start object configuration (editor-only, not saved to .lev). */
+/** Debug start bike parameters (without position). */
+export interface DebugStartParams {
+  gravityDirection: 'up' | 'down' | 'left' | 'right';
+  flipped: boolean;       // true = left-facing bike
+  angle: number;          // degrees, bike rotation
+  speed: number;          // initial speed magnitude
+  speedAngle: number;     // degrees, velocity direction
+}
+
+export interface DebugStartConfig extends DebugStartParams {
+  position: { x: number; y: number };
+}
+
+/** A single recorded point of the bike trajectory (editor-space coordinates). */
+export interface TrajectoryPoint {
+  headX: number; headY: number;
+  lwX: number; lwY: number;
+  rwX: number; rwY: number;
+  // Bike params (for debug start creation on click)
+  bikeX: number; bikeY: number;
+  rotation: number;       // radians
+  flipped: boolean;
+  gravityDirection: 'up' | 'down' | 'left' | 'right';
+  speedX: number;         // velocity X (editor space)
+  speedY: number;         // velocity Y (editor space)
+}
+
 /** Topology error descriptor. */
 export interface TopologyError {
   type:

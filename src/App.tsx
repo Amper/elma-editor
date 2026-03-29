@@ -73,8 +73,9 @@ export function App() {
     return () => window.removeEventListener('keydown', onKey);
   }, [actionsBarCtx, statusBarCtx]);
 
+  const debugStartSelected = useEditorStore((s) => s.debugStartSelected);
   const hasSelection = selection.polygonIds.size > 0 || selection.objectIds.size > 0 || selection.pictureIds.size > 0;
-  const showToolPanel = !!level && !toolPanelCollapsed && (hasSelection || TOOLS_WITH_PANEL.has(activeTool));
+  const showToolPanel = !!level && !toolPanelCollapsed && (hasSelection || debugStartSelected || TOOLS_WITH_PANEL.has(activeTool));
   const showChrome = !isTesting && !showLevelScreen;
 
   return (

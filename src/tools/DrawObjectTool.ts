@@ -5,6 +5,8 @@ import { ObjectType, OBJECT_RADIUS } from 'elmajs';
 import { snapToGrid } from '@/utils/snap';
 import { getTheme, type ThemeColors } from '@/canvas/themeColors';
 
+export const DEBUG_START_COLOR = '#e0a030';
+
 function objectColor(type: number, t: ThemeColors): string {
   switch (type) {
     case ObjectType.Exit: return t.objExit;
@@ -32,12 +34,27 @@ export class DrawObjectTool implements EditorTool {
   }
   deactivate() {
     this.previewPos = null;
+    // Exit debug start placement mode when switching tools
+    const store = this.getStore();
+    if (store.placingDebugStart) {
+      store.setPlacingDebugStart(false);
+    }
   }
 
   onPointerDown(e: CanvasPointerEvent) {
     if (e.button === 0) {
       const store = this.getStore();
       const snapped = snapToGrid(e.worldPos, store.grid);
+
+      if (store.placingDebugStart) {
+        const params = store.debugStartParams;
+        store.setDebugStart({
+          position: { x: snapped.x, y: snapped.y },
+          ...params,
+        });
+        return;
+      }
+
       const config = store.objectConfig;
       store.addObject({
         x: snapped.x,
@@ -62,8 +79,28 @@ export class DrawObjectTool implements EditorTool {
 
     const t = getTheme();
     const store = this.getStore();
-    const { type } = store.objectConfig;
     const { x, y } = this.previewPos;
+
+    if (store.placingDebugStart) {
+      ctx.globalAlpha = 0.4;
+      ctx.beginPath();
+      ctx.arc(x, y, OBJECT_RADIUS, 0, Math.PI * 2);
+      ctx.fillStyle = DEBUG_START_COLOR;
+      ctx.fill();
+      ctx.strokeStyle = DEBUG_START_COLOR;
+      ctx.lineWidth = 0.02;
+      ctx.stroke();
+
+      ctx.fillStyle = '#fff';
+      ctx.font = `${OBJECT_RADIUS * 1.2}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('D', x, y);
+      ctx.globalAlpha = 1.0;
+      return;
+    }
+
+    const { type } = store.objectConfig;
     const color = objectColor(type, t);
     const label = OBJECT_LABELS[type] ?? '?';
 

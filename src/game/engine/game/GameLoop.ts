@@ -84,6 +84,8 @@ export function createGame(
   motor.leftWheel.r = motor.leftWheel.r.add(offset);
   motor.rightWheel.r = motor.rightWheel.r.add(offset);
   motor.bodyR = motor.bodyR.add(offset);
+  // Recalculate head position after moving to start (headR was still at default)
+  calculateHeadPosition(motor);
 
   // Create game level data with flipped objects
   const gameLevel: LevelData = { ...level, objects: gameObjects };

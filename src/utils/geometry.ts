@@ -1,6 +1,6 @@
 import type { Polygon, ElmaObject, Picture } from 'elmajs';
 import { OBJECT_RADIUS } from 'elmajs';
-import type { Vec2, HitTestResult } from '@/types';
+import type { Vec2, HitTestResult, DebugStartConfig } from '@/types';
 import { getEditorLgr } from '@/canvas/lgrCache';
 
 export function distance(a: Vec2, b: Vec2): number {
@@ -57,6 +57,7 @@ export function hitTest(
   captureRadius: number,
   pictures?: Picture[],
   visibility?: HitTestVisibility,
+  debugStart?: DebugStartConfig | null,
 ): HitTestResult {
   let best: HitTestResult = { kind: 'none' };
   let bestDist = captureRadius;
@@ -100,6 +101,15 @@ export function hitTest(
           position: objects[oi]!.position,
         };
       }
+    }
+  }
+
+  // Check debug start (same as objects)
+  if (debugStart) {
+    const d = distance(worldPos, debugStart.position);
+    if (d < Math.max(OBJECT_RADIUS, captureRadius) && (d < bestDist || best.kind === 'none')) {
+      bestDist = d;
+      best = { kind: 'debugStart', position: debugStart.position };
     }
   }
 

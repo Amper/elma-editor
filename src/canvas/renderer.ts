@@ -1,8 +1,8 @@
 import type { Level } from 'elmajs';
-import type { ViewportState, SelectionState, GridConfig, TopologyError, ToolId } from '@/types';
+import type { ViewportState, SelectionState, GridConfig, TopologyError, ToolId, DebugStartConfig, TrajectoryPoint } from '@/types';
 import { applyViewportTransform } from './viewport';
 import { renderGroundPolygons, renderGrassEdges } from './renderPolygons';
-import { renderObjects, renderPictures } from './renderObjects';
+import { renderObjects, renderPictures, renderDebugStart, renderGhostTrajectory } from './renderObjects';
 import { renderGrid } from './renderGrid';
 import { renderOverlays } from './renderOverlays';
 import { getTheme } from './themeColors';
@@ -20,6 +20,9 @@ export interface RenderContext {
   showTextures: boolean;
   showObjects: boolean;
   objectsAnimation: boolean;
+  debugStart: DebugStartConfig | null;
+  debugStartSelected: boolean;
+  debugTrajectory: TrajectoryPoint[] | null;
 }
 
 export function renderFrame(
@@ -87,6 +90,11 @@ export function renderFrame(
       rc.objectsAnimation ? performance.now() : undefined);
   }
 
+  // Layer 4.5: Debug start object (virtual, editor-only)
+  if (rc.debugStart) {
+    renderDebugStart(ctx, rc.debugStart);
+  }
+
   // Layer 5: Overlays (selection, topology errors)
   renderOverlays(ctx, {
     level: rc.level,
@@ -95,6 +103,8 @@ export function renderFrame(
     topologyErrors: rc.topologyErrors,
     timestamp: performance.now(),
     activeTool: rc.activeTool,
+    debugStart: rc.debugStart,
+    debugStartSelected: rc.debugStartSelected,
   });
 
   ctx.restore();

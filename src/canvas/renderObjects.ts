@@ -1,8 +1,9 @@
 import type { ElmaObject, Picture, Polygon } from 'elmajs';
 import { ObjectType, Gravity, OBJECT_RADIUS, Clip } from 'elmajs';
-import type { ViewportState } from '@/types';
+import type { ViewportState, DebugStartConfig, TrajectoryPoint } from '@/types';
 import { getTheme, type ThemeColors } from './themeColors';
-import { BIKE_PREVIEW_SIZE, type LgrEditorAssets } from './lgrCache';
+import { BIKE_PREVIEW_SIZE, type LgrEditorAssets, getEditorLgr } from './lgrCache';
+import { DEBUG_START_COLOR } from '@/tools/DrawObjectTool';
 
 /** Cache composited texture-within-mask bitmaps to avoid re-compositing every frame. */
 const textureMaskCache = new Map<string, ImageBitmap>();
@@ -169,6 +170,151 @@ export function renderObjects(
     if (obj.type === ObjectType.Apple && obj.gravity !== Gravity.None) {
       drawGravityArrow(ctx, x, y, obj.gravity);
     }
+  }
+}
+
+/** Cache for the horizontally flipped bike sprite. */
+let flippedSpriteCache: { source: ImageBitmap; flipped: HTMLCanvasElement } | null = null;
+
+/** Get a horizontally flipped version of the bike sprite (cached).
+ *  Mirrors around the bike's visual center, not the bitmap center.
+ *  The sprite is centered on the left wheel. The bike center (suspension)
+ *  is 0.85 world units to the right, which is 0.85/5.0 = 17% of the sprite width
+ *  to the right of the bitmap center. */
+function getFlippedBikeSprite(source: ImageBitmap): HTMLCanvasElement {
+  if (flippedSpriteCache && flippedSpriteCache.source === source) {
+    return flippedSpriteCache.flipped;
+  }
+  const w = source.width;
+  const h = source.height;
+  // Bike visual center in pixels: bitmap center + offset
+  const bikeCenterPx = w / 2 + 0.85 * (w / BIKE_PREVIEW_SIZE);
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const fCtx = canvas.getContext('2d')!;
+  // Mirror around bikeCenterPx: translate(2*cx, 0) then scale(-1, 1)
+  fCtx.translate(2 * bikeCenterPx, 0);
+  fCtx.scale(-1, 1);
+  fCtx.drawImage(source, 0, 0);
+  flippedSpriteCache = { source, flipped: canvas };
+  return canvas;
+}
+
+/** Draw an arrowhead at (tipX, tipY) pointing in direction (dx, dy). */
+function drawArrowhead(ctx: CanvasRenderingContext2D, tipX: number, tipY: number, dx: number, dy: number, size: number): void {
+  const px = -dy, py = dx; // perpendicular
+  ctx.moveTo(tipX, tipY);
+  ctx.lineTo(tipX - dx * size + px * size * 0.4, tipY - dy * size + py * size * 0.4);
+  ctx.moveTo(tipX, tipY);
+  ctx.lineTo(tipX - dx * size - px * size * 0.4, tipY - dy * size - py * size * 0.4);
+}
+
+/** Render the virtual debug start object on the editor canvas. */
+export function renderDebugStart(
+  ctx: CanvasRenderingContext2D,
+  debugStart: DebugStartConfig,
+): void {
+  const { x, y } = debugStart.position;
+  const angleRad = (debugStart.angle * Math.PI) / 180;
+  const lgrAssets = getEditorLgr();
+
+  // ── Bike sprite (rotated, flipped, grayscale) ──
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(angleRad);
+  ctx.globalAlpha = 0.7;
+  ctx.filter = 'grayscale(100%)';
+
+  if (lgrAssets?.bikeSprite) {
+    const half = BIKE_PREVIEW_SIZE / 2;
+    const sprite = debugStart.flipped
+      ? getFlippedBikeSprite(lgrAssets.bikeSprite)
+      : lgrAssets.bikeSprite;
+    ctx.drawImage(sprite, -half, -half, BIKE_PREVIEW_SIZE, BIKE_PREVIEW_SIZE);
+  } else {
+    // Fallback: simple circle
+    const r = OBJECT_RADIUS;
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
+    ctx.fillStyle = '#888';
+    ctx.fill();
+  }
+  ctx.filter = 'none';
+  ctx.globalAlpha = 1.0;
+  ctx.restore();
+
+  // ── Gravity arrow ──
+  if (debugStart.gravityDirection !== 'down') {
+    let gx = 0, gy = 0;
+    switch (debugStart.gravityDirection) {
+      case 'up':    gy = -1; break;
+      case 'left':  gx = -1; break;
+      case 'right': gx =  1; break;
+    }
+    const gLen = 0.6;
+    const gStartX = x + gx * 0.2;
+    const gStartY = y + gy * 0.2;
+    const gTipX = gStartX + gx * gLen;
+    const gTipY = gStartY + gy * gLen;
+
+    ctx.beginPath();
+    ctx.moveTo(gStartX, gStartY);
+    ctx.lineTo(gTipX, gTipY);
+    drawArrowhead(ctx, gTipX, gTipY, gx, gy, 0.15);
+    ctx.strokeStyle = '#ff80ff';
+    ctx.lineWidth = 0.05;
+    ctx.stroke();
+  }
+
+  // ── Speed arrow (green, length proportional to speed) ──
+  if (debugStart.speed > 0.01) {
+    const sAngleRad = (debugStart.speedAngle * Math.PI) / 180;
+    const sx = Math.cos(sAngleRad);
+    const sy = Math.sin(sAngleRad);
+    // Scale: 0.3 base + speed * 0.15, capped at 3.0
+    const sLen = Math.min(0.3 + debugStart.speed * 0.15, 3.0);
+    const sTipX = x + sx * sLen;
+    const sTipY = y + sy * sLen;
+
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(sTipX, sTipY);
+    drawArrowhead(ctx, sTipX, sTipY, sx, sy, 0.18);
+    ctx.strokeStyle = '#80e080';
+    ctx.lineWidth = 0.05;
+    ctx.stroke();
+  }
+
+}
+
+/** Render the ghost trajectory trails (head + both wheels) on the editor canvas. */
+export function renderGhostTrajectory(
+  ctx: CanvasRenderingContext2D,
+  trajectory: TrajectoryPoint[],
+): void {
+  if (trajectory.length < 2) return;
+
+  const tracks: Array<{ getX: (p: TrajectoryPoint) => number; getY: (p: TrajectoryPoint) => number; color: string }> = [
+    { getX: (p) => p.headX, getY: (p) => p.headY, color: 'rgba(255,100,100,0.4)' },
+    { getX: (p) => p.lwX,   getY: (p) => p.lwY,   color: 'rgba(100,100,255,0.4)' },
+    { getX: (p) => p.rwX,   getY: (p) => p.rwY,   color: 'rgba(100,255,100,0.4)' },
+  ];
+
+  ctx.lineWidth = 0.03;
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+
+  for (const track of tracks) {
+    ctx.beginPath();
+    const first = trajectory[0]!;
+    ctx.moveTo(track.getX(first), track.getY(first));
+    for (let i = 1; i < trajectory.length; i++) {
+      const p = trajectory[i]!;
+      ctx.lineTo(track.getX(p), track.getY(p));
+    }
+    ctx.strokeStyle = track.color;
+    ctx.stroke();
   }
 }
 

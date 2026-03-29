@@ -451,6 +451,14 @@ export function PropertyPanel() {
   const objectConfig = useEditorStore((s) => s.objectConfig);
   const setObjectConfig = useEditorStore((s) => s.setObjectConfig);
   const updateObjects = useEditorStore((s) => s.updateObjects);
+  const debugStart = useEditorStore((s) => s.debugStart);
+  const debugStartSelected = useEditorStore((s) => s.debugStartSelected);
+  const placingDebugStart = useEditorStore((s) => s.placingDebugStart);
+  const setPlacingDebugStart = useEditorStore((s) => s.setPlacingDebugStart);
+  const updateDebugStart = useEditorStore((s) => s.updateDebugStart);
+  const removeDebugStart = useEditorStore((s) => s.removeDebugStart);
+  const debugStartParams = useEditorStore((s) => s.debugStartParams);
+  const setDebugStartParams = useEditorStore((s) => s.setDebugStartParams);
   const activeTool = useEditorStore((s) => s.activeTool);
   const pipeRadius = useEditorStore((s) => s.pipeRadius);
   const setPipeRadius = useEditorStore((s) => s.setPipeRadius);
@@ -510,7 +518,7 @@ export function PropertyPanel() {
 
   const hasToolSections = activeTool in TOOL_SECTIONS_MAP;
 
-  if (!level || (!hasSelection && !hasToolSections)) {
+  if (!level || (!hasSelection && !hasToolSections && !debugStartSelected)) {
     return null;
   }
 
@@ -786,35 +794,152 @@ export function PropertyPanel() {
         </>
       )}
 
+      {(debugStartSelected || placingDebugStart) && (() => {
+        const params = debugStart ?? debugStartParams;
+        const updateParams = (v: Record<string, unknown>) => {
+          if (debugStart) updateDebugStart(v);
+          setDebugStartParams(v);
+        };
+        return (
+        <>
+          <h3 className="section-header section-header--open">Debug Start</h3>
+          <div className="accordion-body">
+            {debugStart && (
+              <div className="detail-text" style={{ marginBottom: 8 }}>
+                Position: ({debugStart.position.x.toFixed(2)}, {debugStart.position.y.toFixed(2)})
+              </div>
+            )}
+            {!debugStart && placingDebugStart && (
+              <div className="detail-text" style={{ marginBottom: 8, color: 'var(--color-text-secondary)' }}>
+                Click on the map to place
+              </div>
+            )}
+            <div style={{ marginBottom: 'var(--space-xs)', fontSize: 11, color: 'var(--color-text-secondary)' }}>Gravity</div>
+            <div className="type-switch type-switch--vertical">
+              <button
+                className={`type-switch__option${params.gravityDirection === 'down' ? ' type-switch__option--active' : ''}`}
+                onClick={() => updateParams({ gravityDirection: 'down' })}
+              >
+                <span className="type-switch__icon" style={{ color: '#222' }}><ArrowDownIcon size={16} weight="fill" /></span> <span style={{ color: '#aaa' }}>Down (Normal)</span>
+              </button>
+              <button
+                className={`type-switch__option${params.gravityDirection === 'up' ? ' type-switch__option--active' : ''}`}
+                onClick={() => updateParams({ gravityDirection: 'up' })}
+              >
+                <span className="type-switch__icon" style={{ color: '#222' }}><ArrowUpIcon size={16} weight="fill" /></span> <span style={{ color: '#aaa' }}>Up</span>
+              </button>
+              <button
+                className={`type-switch__option${params.gravityDirection === 'left' ? ' type-switch__option--active' : ''}`}
+                onClick={() => updateParams({ gravityDirection: 'left' })}
+              >
+                <span className="type-switch__icon" style={{ color: '#222' }}><ArrowLeftIcon size={16} weight="fill" /></span> <span style={{ color: '#aaa' }}>Left</span>
+              </button>
+              <button
+                className={`type-switch__option${params.gravityDirection === 'right' ? ' type-switch__option--active' : ''}`}
+                onClick={() => updateParams({ gravityDirection: 'right' })}
+              >
+                <span className="type-switch__icon" style={{ color: '#222' }}><ArrowRightIcon size={16} weight="fill" /></span> <span style={{ color: '#aaa' }}>Right</span>
+              </button>
+            </div>
+            <div style={{ marginTop: 'var(--space-md)', marginBottom: 'var(--space-xs)', fontSize: 11, color: 'var(--color-text-secondary)' }}>Direction</div>
+            <div className="type-switch type-switch--vertical">
+              <button
+                className={`type-switch__option${!params.flipped ? ' type-switch__option--active' : ''}`}
+                onClick={() => updateParams({ flipped: false })}
+              >
+                <span className="type-switch__icon" style={{ color: '#222' }}><ArrowRightIcon size={16} weight="fill" /></span> <span style={{ color: '#aaa' }}>Right</span>
+              </button>
+              <button
+                className={`type-switch__option${params.flipped ? ' type-switch__option--active' : ''}`}
+                onClick={() => updateParams({ flipped: true })}
+              >
+                <span className="type-switch__icon" style={{ color: '#222' }}><ArrowLeftIcon size={16} weight="fill" /></span> <span style={{ color: '#aaa' }}>Left</span>
+              </button>
+            </div>
+            <label className="form-label" style={{ marginTop: 'var(--space-md)' }}>
+              Angle (degrees)
+              <input
+                type="number"
+                value={params.angle}
+                onChange={(e) => updateParams({ angle: Number(e.target.value) })}
+                className="input"
+                min={-180}
+                max={180}
+                step={5}
+              />
+            </label>
+            <label className="form-label">
+              Speed
+              <input
+                type="number"
+                value={params.speed}
+                onChange={(e) => updateParams({ speed: Math.max(0, Number(e.target.value)) })}
+                className="input"
+                min={0}
+                step={1}
+              />
+            </label>
+            <label className="form-label">
+              Speed angle (degrees)
+              <input
+                type="number"
+                value={params.speedAngle}
+                onChange={(e) => updateParams({ speedAngle: Number(e.target.value) })}
+                className="input"
+                min={-180}
+                max={180}
+                step={5}
+              />
+            </label>
+            {debugStart && (
+              <button
+                className="btn btn--text"
+                style={{ color: '#e06060', marginTop: 'var(--space-md)', width: '100%' }}
+                onClick={removeDebugStart}
+              >
+                Delete Debug Start
+              </button>
+            )}
+          </div>
+        </>
+        );
+      })()}
+
       {activeTool === ToolId.DrawObject && (
       <Section id="objectPlacement" title="Object" open={openSections.has('objectPlacement')} onToggle={toggleSection}>
         <div className="type-switch type-switch--vertical">
           <button
-            className={`type-switch__option${objectConfig.type === ObjectType.Exit ? ' type-switch__option--active' : ''}`}
-            onClick={() => setObjectConfig({ type: ObjectType.Exit })}
+            className={`type-switch__option${objectConfig.type === ObjectType.Exit && !placingDebugStart ? ' type-switch__option--active' : ''}`}
+            onClick={() => { setPlacingDebugStart(false); setObjectConfig({ type: ObjectType.Exit }); }}
           >
             <span className="type-switch__icon" style={{ color: '#6a5a00' }}><FlowerIcon size={16} weight="fill" /></span> <span style={{ color: '#d0c860' }}>Flower (Exit)</span>
           </button>
           <button
-            className={`type-switch__option${objectConfig.type === ObjectType.Apple ? ' type-switch__option--active' : ''}`}
-            onClick={() => setObjectConfig({ type: ObjectType.Apple })}
+            className={`type-switch__option${objectConfig.type === ObjectType.Apple && !placingDebugStart ? ' type-switch__option--active' : ''}`}
+            onClick={() => { setPlacingDebugStart(false); setObjectConfig({ type: ObjectType.Apple }); }}
           >
             <span className="type-switch__icon" style={{ color: '#a02020' }}><AppleLogoIcon size={16} weight="fill" /></span> <span style={{ color: '#e08080' }}>Apple</span>
           </button>
           <button
-            className={`type-switch__option${objectConfig.type === ObjectType.Killer ? ' type-switch__option--active' : ''}`}
-            onClick={() => setObjectConfig({ type: ObjectType.Killer })}
+            className={`type-switch__option${objectConfig.type === ObjectType.Killer && !placingDebugStart ? ' type-switch__option--active' : ''}`}
+            onClick={() => { setPlacingDebugStart(false); setObjectConfig({ type: ObjectType.Killer }); }}
           >
             <span className="type-switch__icon" style={{ color: '#444' }}><SkullIcon size={16} weight="fill" /></span> <span style={{ color: '#909090' }}>Killer</span>
           </button>
           {!hasStart && (
             <button
-              className={`type-switch__option${objectConfig.type === ObjectType.Start ? ' type-switch__option--active' : ''}`}
-              onClick={() => setObjectConfig({ type: ObjectType.Start })}
+              className={`type-switch__option${objectConfig.type === ObjectType.Start && !placingDebugStart ? ' type-switch__option--active' : ''}`}
+              onClick={() => { setPlacingDebugStart(false); setObjectConfig({ type: ObjectType.Start }); }}
             >
               <span className="type-switch__icon" style={{ color: '#2a5a8a' }}><FlagIcon size={16} weight="fill" /></span> <span style={{ color: '#80b0e0' }}>Start</span>
             </button>
           )}
+          <button
+            className={`type-switch__option${placingDebugStart ? ' type-switch__option--active' : ''}`}
+            onClick={() => setPlacingDebugStart(!placingDebugStart)}
+          >
+            <span className="type-switch__icon" style={{ color: '#7a5500' }}><FlagIcon size={16} weight="fill" /></span> <span style={{ color: '#e0a030' }}>Debug Start</span>
+          </button>
         </div>
         {objectConfig.type === ObjectType.Apple && (
           <>

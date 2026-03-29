@@ -1,6 +1,7 @@
 import { useRef, useEffect, useCallback, useState } from 'react';
 import { useEditorStore } from '@/state/editorStore';
 import { renderFrame } from './renderer';
+import { renderGhostTrajectory } from './renderObjects';
 import { renderRemoteUsers } from './renderOverlays';
 import { broadcastAwareness } from '@/collab/awareness';
 import { screenToWorld, zoomAtPoint, panByScreenDelta, fitLevel } from './viewport';
@@ -98,6 +99,7 @@ export function EditorCanvas() {
         return;
       }
 
+      const debugState = useEditorStore.getState();
       renderFrame(ctx, canvas.width, canvas.height, {
         level,
         viewport,
@@ -110,7 +112,24 @@ export function EditorCanvas() {
         showTextures,
         showObjects,
         objectsAnimation,
+        debugStart: debugState.debugStart,
+        debugStartSelected: debugState.debugStartSelected,
+        debugTrajectory: debugState.debugTrajectory,
       });
+
+      // Draw ghost trajectory on top of everything (own world-space pass)
+      if (debugState.debugTrajectory && debugState.debugTrajectory.length > 1) {
+        const dpr = window.devicePixelRatio || 1;
+        ctx.save();
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        const cssW = canvas.width / dpr;
+        const cssH = canvas.height / dpr;
+        ctx.translate(cssW / 2, cssH / 2);
+        ctx.scale(viewport.zoom, viewport.zoom);
+        ctx.translate(-viewport.centerX, -viewport.centerY);
+        renderGhostTrajectory(ctx, debugState.debugTrajectory);
+        ctx.restore();
+      }
 
       // Draw tool overlay in world space
       if (level && toolManagerRef.current) {

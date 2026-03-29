@@ -1,5 +1,6 @@
 import type { Level } from 'elmajs';
-import { type ViewportState, type SelectionState, type TopologyError, ToolId, type Vec2 } from '@/types';
+import { OBJECT_RADIUS } from 'elmajs';
+import { type ViewportState, type SelectionState, type TopologyError, type DebugStartConfig, ToolId, type Vec2 } from '@/types';
 import { getTheme, withAlpha } from './themeColors';
 import { getEditorLgr } from './lgrCache';
 
@@ -10,6 +11,8 @@ export interface OverlayContext {
   topologyErrors: TopologyError[];
   timestamp: number;
   activeTool: ToolId;
+  debugStart: DebugStartConfig | null;
+  debugStartSelected: boolean;
 }
 
 export function renderOverlays(
@@ -98,6 +101,25 @@ function renderSelectionHighlights(
     // Animated inner selection ring
     ctx.beginPath();
     ctx.arc(obj.position.x, obj.position.y, 0.5, 0, Math.PI * 2);
+    ctx.strokeStyle = t.selection;
+    ctx.lineWidth = 2 / viewport.zoom;
+    ctx.setLineDash([dashLen, dashGap]);
+    ctx.lineDashOffset = -dashOffset;
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // Highlight selected debug start: same style as regular objects
+  if (oc.debugStartSelected && oc.debugStart) {
+    const dp = oc.debugStart.position;
+    ctx.beginPath();
+    ctx.arc(dp.x, dp.y, 0.6, 0, Math.PI * 2);
+    ctx.strokeStyle = withAlpha(t.selection, 0.2);
+    ctx.lineWidth = 3 / viewport.zoom;
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.arc(dp.x, dp.y, 0.5, 0, Math.PI * 2);
     ctx.strokeStyle = t.selection;
     ctx.lineWidth = 2 / viewport.zoom;
     ctx.setLineDash([dashLen, dashGap]);

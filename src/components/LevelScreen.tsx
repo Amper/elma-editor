@@ -54,6 +54,9 @@ export function LevelScreen() {
       showTextures: true,
       showObjects: true,
       objectsAnimation: false,
+      debugStart: null,
+      debugStartSelected: false,
+      debugTrajectory: null,
     });
     setPreview(offscreen.toDataURL('image/png'));
   }, [level]); // eslint-disable-line react-hooks/exhaustive-deps

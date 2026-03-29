@@ -15,6 +15,10 @@ import {
   type ButtonViewMode,
   type ButtonSize,
   type ToolbarItemConfig,
+  type TestMode,
+  type DebugStartConfig,
+  type DebugStartParams,
+  type TrajectoryPoint,
 } from '@/types';
 import { fitLevel } from '@/canvas/viewport';
 import { validateTopology } from '@/utils/topology';
@@ -269,6 +273,18 @@ export interface EditorState {
   autoGrassConfig: AutoGrassConfig;
   /** Whether the game test mode is active. */
   isTesting: boolean;
+  /** Normal or debug test mode. */
+  testMode: TestMode;
+  /** Virtual debug start object (editor-only, not saved to .lev). */
+  debugStart: DebugStartConfig | null;
+  /** Whether the debug start object is currently selected. */
+  debugStartSelected: boolean;
+  /** Whether the DrawObject tool is placing a debug start. */
+  placingDebugStart: boolean;
+  /** Default params for the next debug start placement. */
+  debugStartParams: DebugStartParams;
+  /** Recorded bike trajectory from last debug test (ephemeral). */
+  debugTrajectory: TrajectoryPoint[] | null;
   /** Display toggles for editor rendering layers. */
   showGrass: boolean;
   showPictures: boolean;
@@ -462,6 +478,16 @@ export interface EditorState {
   startTesting: () => void;
   stopTesting: () => void;
 
+  // ── Debug start ──
+  setDebugStart: (config: DebugStartConfig | null) => void;
+  updateDebugStart: (partial: Partial<DebugStartConfig>) => void;
+  removeDebugStart: () => void;
+  setTestMode: (mode: TestMode) => void;
+  setDebugStartSelected: (selected: boolean) => void;
+  setPlacingDebugStart: (placing: boolean) => void;
+  setDebugStartParams: (params: Partial<DebugStartParams>) => void;
+  setDebugTrajectory: (trajectory: TrajectoryPoint[] | null) => void;
+
   // ── Command palette ──
   commandPaletteOpen: boolean;
   setCommandPaletteOpen: (open: boolean) => void;
@@ -538,6 +564,12 @@ export const useEditorStore = create<EditorState>()(
       drawPolygonGrass: false,
       autoGrassConfig: { thickness: 0.5, maxAngle: 40 },
       isTesting: false,
+      testMode: 'normal' as TestMode,
+      debugStart: null as DebugStartConfig | null,
+      debugStartSelected: false,
+      placingDebugStart: false,
+      debugStartParams: { gravityDirection: 'down', flipped: false, angle: 0, speed: 0, speedAngle: 0 } as DebugStartParams,
+      debugTrajectory: null as TrajectoryPoint[] | null,
       testConfig: { ...DEFAULT_TEST_CONFIG },
       selectVertexEditing: false,
       setSelectVertexEditing: (editing) => set({ selectVertexEditing: editing }),
@@ -578,6 +610,9 @@ export const useEditorStore = create<EditorState>()(
           isDirty: false,
           selection: emptySelection(),
           topologyErrors: [],
+          debugStart: null,
+          debugStartSelected: false,
+          debugTrajectory: null,
         });
         // Clear undo history so Ctrl+Z doesn't revert to null/previous file
         useEditorStore.temporal.getState().clear();
@@ -594,6 +629,9 @@ export const useEditorStore = create<EditorState>()(
           selection: emptySelection(),
           topologyErrors: [],
           viewport: vp,
+          debugStart: null,
+          debugStartSelected: false,
+          debugTrajectory: null,
         });
         // Clear undo history so Ctrl+Z doesn't revert to null/previous file
         useEditorStore.temporal.getState().clear();
@@ -1409,8 +1447,10 @@ export const useEditorStore = create<EditorState>()(
       // ── Testing ──
 
       startTesting: () => {
-        const { level } = get();
+        const { level, testMode, debugStart } = get();
         if (!level) return;
+        // Debug mode stays active even without a debug start (uses regular start, still records trajectory)
+        const effectiveMode = testMode;
         // Run validation synchronously to ensure latest state
         const errors = validateTopology(level.polygons, level.objects, level.pictures);
         // Only block on errors that prevent playing (not missing flower)
@@ -1419,9 +1459,24 @@ export const useEditorStore = create<EditorState>()(
           set({ topologyErrors: errors, showValidationPanel: true });
           return;
         }
-        set({ isTesting: true, showValidationPanel: false });
+        set({ isTesting: true, showValidationPanel: false, testMode: effectiveMode, debugTrajectory: null });
       },
       stopTesting: () => set({ isTesting: false }),
+
+      // ── Debug start ──
+
+      setDebugStart: (config) => set({ debugStart: config }),
+      updateDebugStart: (partial) => {
+        const { debugStart } = get();
+        if (!debugStart) return;
+        set({ debugStart: { ...debugStart, ...partial } });
+      },
+      removeDebugStart: () => set({ debugStart: null, debugStartSelected: false, debugTrajectory: null }),
+      setTestMode: (mode) => set({ testMode: mode, ...(mode === 'normal' ? { debugTrajectory: null } : {}) }),
+      setDebugStartSelected: (selected) => set({ debugStartSelected: selected }),
+      setPlacingDebugStart: (placing) => set({ placingDebugStart: placing }),
+      setDebugStartParams: (partial) => set((s) => ({ debugStartParams: { ...s.debugStartParams, ...partial } })),
+      setDebugTrajectory: (trajectory) => set({ debugTrajectory: trajectory }),
 
       // ── Command palette ──────────────────────────────────────────────
       commandPaletteOpen: false,
@@ -1548,13 +1603,15 @@ export const useEditorStore = create<EditorState>()(
       partialize: (state) => ({
         level: state.level,
         fileName: state.fileName,
+        debugStart: state.debugStart,
       }),
       // Compare by reference so that set() calls that don't change
-      // level/fileName are ignored (otherwise futureStates gets cleared
+      // level/fileName/debugStart are ignored (otherwise futureStates gets cleared
       // by unrelated state updates like topology validation or cursor moves)
       equality: (pastState, currentState) =>
         pastState.level === currentState.level &&
-        pastState.fileName === currentState.fileName,
+        pastState.fileName === currentState.fileName &&
+        pastState.debugStart === currentState.debugStart,
       limit: 100,
     },
   ),
@@ -1575,6 +1632,8 @@ const LS_LEVEL_KEY = 'eled_level';
 const LS_FILENAME_KEY = 'eled_fileName';
 const LS_EDITOR_PROPS_KEY = 'eled_editorProps';
 const LS_TEST_CONFIG_KEY = 'eled_testConfig';
+const LS_DEBUG_START_KEY = 'eled_debugStart';
+const LS_TEST_MODE_KEY = 'eled_testMode';
 
 /** Debounced save to localStorage. */
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -1610,6 +1669,8 @@ useEditorStore.subscribe((state) => {
 
 let prevEditorProps = '';
 let prevTestConfig = '';
+let prevDebugStart = '';
+let prevTestMode = '';
 
 useEditorStore.subscribe((state) => {
   const editorProps = JSON.stringify({
@@ -1632,6 +1693,8 @@ useEditorStore.subscribe((state) => {
     minimapOpacity: state.minimapOpacity,
   });
   const testConfig = JSON.stringify(state.testConfig);
+  const debugStart = JSON.stringify(state.debugStart);
+  const testMode = state.testMode;
 
   try {
     if (editorProps !== prevEditorProps) {
@@ -1641,6 +1704,18 @@ useEditorStore.subscribe((state) => {
     if (testConfig !== prevTestConfig) {
       prevTestConfig = testConfig;
       localStorage.setItem(LS_TEST_CONFIG_KEY, testConfig);
+    }
+    if (debugStart !== prevDebugStart) {
+      prevDebugStart = debugStart;
+      if (state.debugStart) {
+        localStorage.setItem(LS_DEBUG_START_KEY, debugStart);
+      } else {
+        localStorage.removeItem(LS_DEBUG_START_KEY);
+      }
+    }
+    if (testMode !== prevTestMode) {
+      prevTestMode = testMode;
+      localStorage.setItem(LS_TEST_MODE_KEY, testMode);
     }
   } catch {
     // Ignore quota errors
@@ -1688,6 +1763,29 @@ function restoreFromLocalStorage(): void {
     }
   } catch {
     localStorage.removeItem(LS_TEST_CONFIG_KEY);
+  }
+
+  // Restore debug start
+  try {
+    const raw = localStorage.getItem(LS_DEBUG_START_KEY);
+    if (raw) {
+      const ds = JSON.parse(raw);
+      if (ds && typeof ds.position === 'object') {
+        patch.debugStart = ds;
+      }
+    }
+  } catch {
+    localStorage.removeItem(LS_DEBUG_START_KEY);
+  }
+
+  // Restore test mode
+  try {
+    const raw = localStorage.getItem(LS_TEST_MODE_KEY);
+    if (raw === 'normal' || raw === 'debug') {
+      patch.testMode = raw;
+    }
+  } catch {
+    localStorage.removeItem(LS_TEST_MODE_KEY);
   }
 
   // Restore level
