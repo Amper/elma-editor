@@ -149,7 +149,7 @@ export function Minimap() {
 
     animFrameRef.current = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(animFrameRef.current);
-  }, [renderLevelCache]);
+  }, [renderLevelCache, showLevelScreen, showMinimap]);
 
   // Click/drag to navigate (editor mode only)
   const navigateToPoint = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
