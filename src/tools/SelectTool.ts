@@ -108,6 +108,7 @@ export class SelectTool implements EditorTool {
     this.veSelected = new Set();
     this.veMoving = false;
     const store = this.getStore();
+    store.clearSelection();
     store.setSelectVertexEditing(false);
     store.setToggleSelectVertexEditing(null);
   }
