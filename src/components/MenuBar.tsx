@@ -22,6 +22,8 @@ import {
   UniteSquareIcon,
   UsersIcon,
   WarningIcon,
+  WaveSineIcon,
+  WaveSquareIcon,
 } from "@phosphor-icons/react";
 import { ToolId } from '@/types';
 import { SaveToLibraryModal } from './SaveToLibraryModal';
@@ -138,6 +140,8 @@ function PolygonActionsMenu({
   mergeSelectedPolygons,
   mirrorHorizontally,
   mirrorVertically,
+  smoothSelectedPolygons,
+  simplifySelectedPolygons,
   autoGrassSelectedPolygons,
   toggleSelectVertexEditing,
   showIcon,
@@ -153,6 +157,8 @@ function PolygonActionsMenu({
   mergeSelectedPolygons: () => void;
   mirrorHorizontally: () => void;
   mirrorVertically: () => void;
+  smoothSelectedPolygons: () => void;
+  simplifySelectedPolygons: () => void;
   autoGrassSelectedPolygons: () => void;
   toggleSelectVertexEditing: () => void;
   showIcon: boolean;
@@ -248,6 +254,21 @@ function PolygonActionsMenu({
           <div className="toolbar-context-menu__divider" />
           <button
             className="toolbar-context-menu__item"
+            onClick={() => run(smoothSelectedPolygons)}
+          >
+            <WaveSineIcon size={14} />
+            <span className="toolbar-context-menu__label">Smooth</span>
+          </button>
+          <button
+            className="toolbar-context-menu__item"
+            onClick={() => run(simplifySelectedPolygons)}
+          >
+            <WaveSquareIcon size={14} />
+            <span className="toolbar-context-menu__label">Simplify</span>
+          </button>
+          <div className="toolbar-context-menu__divider" />
+          <button
+            className="toolbar-context-menu__item"
             onClick={() => run(autoGrassSelectedPolygons)}
             disabled={!canAutoGrass}
           >
@@ -279,6 +300,8 @@ export function MenuBar() {
   const autoGrassSelectedPolygons = useEditorStore((s) => s.autoGrassSelectedPolygons);
   const mirrorHorizontally = useEditorStore((s) => s.mirrorHorizontally);
   const mirrorVertically = useEditorStore((s) => s.mirrorVertically);
+  const smoothSelectedPolygons = useEditorStore((s) => s.smoothSelectedPolygons);
+  const simplifySelectedPolygons = useEditorStore((s) => s.simplifySelectedPolygons);
   const removePolygons = useEditorStore((s) => s.removePolygons);
   const removeObjects = useEditorStore((s) => s.removeObjects);
   const topologyErrors = useEditorStore((s) => s.topologyErrors);
@@ -392,6 +415,8 @@ export function MenuBar() {
             mergeSelectedPolygons={mergeSelectedPolygons}
             mirrorHorizontally={mirrorHorizontally}
             mirrorVertically={mirrorVertically}
+            smoothSelectedPolygons={smoothSelectedPolygons}
+            simplifySelectedPolygons={simplifySelectedPolygons}
             autoGrassSelectedPolygons={autoGrassSelectedPolygons}
             toggleSelectVertexEditing={toggleSelectVertexEditing!}
             showIcon={showIcon}

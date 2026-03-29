@@ -171,6 +171,12 @@ export const COMMANDS: Command[] = [
   { id: 'polygon.mirror-v', label: 'Mirror Vertically', category: 'Polygon',
     execute: () => useEditorStore.getState().mirrorVertically(),
     isEnabled: hasSelection },
+  { id: 'polygon.smooth', label: 'Smooth Polygons', category: 'Polygon',
+    execute: () => useEditorStore.getState().smoothSelectedPolygons(),
+    isEnabled: hasPolygonSelection },
+  { id: 'polygon.simplify', label: 'Simplify Polygons', category: 'Polygon',
+    execute: () => useEditorStore.getState().simplifySelectedPolygons(),
+    isEnabled: hasPolygonSelection },
 
   // ── View ──
   { id: 'view.grid', label: 'Toggle Grid', category: 'View', shortcut: 'G',

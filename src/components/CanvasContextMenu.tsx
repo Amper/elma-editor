@@ -19,6 +19,8 @@ import {
   SubtractSquareIcon,
   TrashIcon,
   UniteSquareIcon,
+  WaveSineIcon,
+  WaveSquareIcon,
 } from '@phosphor-icons/react';
 import { ToolId } from '@/types';
 import { SaveToLibraryModal } from './SaveToLibraryModal';
@@ -51,6 +53,8 @@ export function CanvasContextMenu({ x, y, onClose }: Props) {
   const autoGrassSelectedPolygons = useEditorStore((s) => s.autoGrassSelectedPolygons);
   const mirrorHorizontally = useEditorStore((s) => s.mirrorHorizontally);
   const mirrorVertically = useEditorStore((s) => s.mirrorVertically);
+  const smoothSelectedPolygons = useEditorStore((s) => s.smoothSelectedPolygons);
+  const simplifySelectedPolygons = useEditorStore((s) => s.simplifySelectedPolygons);
   const removePolygons = useEditorStore((s) => s.removePolygons);
   const removeObjects = useEditorStore((s) => s.removeObjects);
 
@@ -205,6 +209,18 @@ export function CanvasContextMenu({ x, y, onClose }: Props) {
           <button className="canvas-context-menu__item" onClick={act(mirrorVertically)}>
             <FlipVerticalIcon size={14} />
             <span className="canvas-context-menu__label">Mirror vertically</span>
+          </button>
+        )}
+        {selection.polygonIds.size > 0 && (
+          <button className="canvas-context-menu__item" onClick={act(smoothSelectedPolygons)}>
+            <WaveSineIcon size={14} />
+            <span className="canvas-context-menu__label">Smooth polygons</span>
+          </button>
+        )}
+        {selection.polygonIds.size > 0 && (
+          <button className="canvas-context-menu__item" onClick={act(simplifySelectedPolygons)}>
+            <WaveSquareIcon size={14} />
+            <span className="canvas-context-menu__label">Simplify polygons</span>
           </button>
         )}
         {canAutoGrass && (

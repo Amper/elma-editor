@@ -25,6 +25,8 @@ import { validateTopology } from '@/utils/topology';
 import { mergePolygons } from '@/utils/mergePolygons';
 import { splitPolygons, selfSplitPolygon } from '@/utils/splitPolygons';
 import { autoGrassPolygon, type AutoGrassConfig } from '@/utils/autoGrass';
+import { smoothPolygonVertices } from '@/utils/smoothPolygon';
+import { simplifyPolygon } from '@/utils/imageTrace';
 import { pointInPolygon, computeSignedArea, computeBBox } from '@/utils/geometry';
 import { generateId } from '@/utils/generateId';
 import { polyIdToIndex, objectIdToIndex, pictureIdToIndex } from '@/utils/idLookup';
@@ -455,6 +457,8 @@ export interface EditorState {
   autoGrassSelectedPolygons: () => void;
   mirrorHorizontally: () => void;
   mirrorVertically: () => void;
+  smoothSelectedPolygons: () => void;
+  simplifySelectedPolygons: () => void;
 
   // ── Topology ──
   setTopologyErrors: (errors: TopologyError[]) => void;
@@ -1396,6 +1400,46 @@ export const useEditorStore = create<EditorState>()(
           if (mirrorOps.length === 1) broadcast(mirrorOps[0]!);
           else if (mirrorOps.length > 1) broadcast({ type: 'batch', operations: mirrorOps });
         }
+      },
+
+      smoothSelectedPolygons: () => {
+        const { level, selection } = get();
+        if (!level || selection.polygonIds.size === 0) return;
+
+        const clone = cloneLevel(level);
+        const smoothed: { id: string; grass: boolean; vertices: { x: number; y: number }[] }[] = [];
+        for (const poly of clone.polygons) {
+          if (!selection.polygonIds.has(poly.id)) continue;
+          poly.vertices = smoothPolygonVertices(poly.vertices);
+          smoothed.push({ id: poly.id, grass: poly.grass, vertices: poly.vertices.map(v => ({ x: v.x, y: v.y })) });
+        }
+        set({ level: clone, isDirty: true });
+        if (smoothed.length > 0) {
+          broadcast({ type: 'replacePolygons', removeIds: smoothed.map(p => p.id), add: smoothed });
+        }
+      },
+
+      simplifySelectedPolygons: () => {
+        const { level, selection } = get();
+        if (!level || selection.polygonIds.size === 0) return;
+
+        const clone = cloneLevel(level);
+        const simplified: { id: string; grass: boolean; vertices: { x: number; y: number }[] }[] = [];
+        for (const poly of clone.polygons) {
+          if (!selection.polygonIds.has(poly.id)) continue;
+          if (poly.vertices.length <= 3) continue;
+          const bbox = computeBBox(poly.vertices);
+          const diag = Math.hypot(bbox.maxX - bbox.minX, bbox.maxY - bbox.minY);
+          const tolerance = diag * 0.02;
+          const result = simplifyPolygon(poly.vertices.map(v => ({ x: v.x, y: v.y })), tolerance);
+          if (result.length >= 3) {
+            poly.vertices = result.map(v => new Position(v.x, v.y));
+            simplified.push({ id: poly.id, grass: poly.grass, vertices: result });
+          }
+        }
+        if (simplified.length === 0) return;
+        set({ level: clone, isDirty: true });
+        broadcast({ type: 'replacePolygons', removeIds: simplified.map(p => p.id), add: simplified });
       },
 
       // ── Topology ──
