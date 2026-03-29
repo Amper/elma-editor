@@ -1503,7 +1503,7 @@ export const useEditorStore = create<EditorState>()(
           set({ topologyErrors: errors, showValidationPanel: true });
           return;
         }
-        set({ isTesting: true, showValidationPanel: false, testMode: effectiveMode, debugTrajectory: null });
+        set({ isTesting: true, showLevelScreen: false, showValidationPanel: false, testMode: effectiveMode, debugTrajectory: null });
       },
       stopTesting: () => set({ isTesting: false }),
 
