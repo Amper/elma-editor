@@ -242,6 +242,17 @@ export function GameOverlay() {
     };
     canvas.addEventListener('wheel', handleWheel, { passive: false });
 
+    // Click to exit test mode when dead
+    const handleClick = () => {
+      if (gameState.result === 'dead' || gameState.result === 'won') {
+        if (isDebugMode && trajectoryPoints.length > 0) {
+          useEditorStore.getState().setDebugTrajectory(trajectoryPoints);
+        }
+        useEditorStore.getState().stopTesting();
+      }
+    };
+    canvas.addEventListener('click', handleClick);
+
     const renderOpts = { showGrass: tc.showGrass, showPictures: tc.showPictures, showTextures: tc.showTextures, objectsAnimation: tc.objectsAnimation };
 
     // Notify collab server that testing started
@@ -406,6 +417,7 @@ export function GameOverlay() {
       gameCameraRef.active = false;
       cancelAnimationFrame(animFrame);
       canvas.removeEventListener('wheel', handleWheel);
+      canvas.removeEventListener('click', handleClick);
       observer.disconnect();
       input.destroy();
       if (isWebGL) {
