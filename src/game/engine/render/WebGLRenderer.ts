@@ -7,6 +7,7 @@ import { LevelRenderer } from './LevelRenderer';
 import { BikeRenderer } from './BikeRenderer';
 import { ObjectRenderer } from './ObjectRenderer';
 import { PictureRenderer } from './PictureRenderer';
+import { GrassRenderer } from './GrassRenderer';
 import { HUDRenderer } from './HUDRenderer';
 import { TextureAtlas } from './TextureAtlas';
 import type { GameState } from '../game/GameLoop';
@@ -21,6 +22,7 @@ export class WebGLRenderer {
   private levelRenderer: LevelRenderer;
   private objectRenderer: ObjectRenderer;
   private pictureRenderer: PictureRenderer;
+  private grassRenderer: GrassRenderer;
   private hudRenderer: HUDRenderer;
   private atlas: TextureAtlas;
   private lgrLoaded = false;
@@ -31,6 +33,7 @@ export class WebGLRenderer {
     this.bikeRenderer = new BikeRenderer(this.glCtx);
     this.objectRenderer = new ObjectRenderer(this.glCtx);
     this.pictureRenderer = new PictureRenderer(this.glCtx);
+    this.grassRenderer = new GrassRenderer(this.glCtx);
 
     // HUD canvas needs a positioned parent container
     const parent = canvas.parentElement!;
@@ -48,6 +51,7 @@ export class WebGLRenderer {
   /** Build level geometry (call on level load) */
   buildLevel(level: LevelData): void {
     this.levelRenderer.buildLevel(level);
+    this.grassRenderer.computePlacements(level);
   }
 
   /** Load LGR graphics data */
@@ -65,6 +69,9 @@ export class WebGLRenderer {
     this.pictureRenderer.loadPictures(lgr.pictures, this.atlas);
     this.pictureRenderer.loadMasks(lgr.masks, this.atlas);
 
+    // Load grass edge sprites into atlas
+    this.grassRenderer.loadGrassSprites(lgr.grassSprites, this.atlas);
+
     // Upload atlas to GPU
     this.atlas.upload(this.glCtx);
 
@@ -73,6 +80,13 @@ export class WebGLRenderer {
 
     // Load level textures (ground/sky separate from atlas)
     this.levelRenderer.loadTextures(level, lgr);
+
+    // Load qgrass texture for grass fill (separate from LevelRenderer)
+    this.grassRenderer.loadGrassTexture(lgr.textures.get('qgrass'));
+
+    // Recompute grass placements now that sprites are loaded
+    // (buildLevel may have been called before loadLgr)
+    this.grassRenderer.computePlacements(level);
 
     this.lgrLoaded = true;
   }
@@ -101,9 +115,9 @@ export class WebGLRenderer {
     // 3. Ground (textured or colored polygons)
     this.levelRenderer.drawGround(viewProj, showTextures);
 
-    // 4. Grass (qgrass textured, clipped to ground)
-    if (showGrass) {
-      this.levelRenderer.drawGrass(viewProj, showTextures);
+    // 4. Grass (qgrass fill + QUP/QDOWN blade sprites, clipped to ground)
+    if (showGrass && this.lgrLoaded) {
+      this.grassRenderer.draw(viewProj);
     }
 
     // 5. Pictures (level decoration sprites with clipping)

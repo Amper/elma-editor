@@ -63,6 +63,7 @@ export interface ObjectAnimations {
 export interface GrassSprite {
   image: DecodedImage;
   isUp: boolean;  // QUP = slopes up, QDOWN = slopes down
+  borders: number[];  // Per-column first non-transparent row index (heightmap)
 }
 
 export interface LgrData {
@@ -249,12 +250,15 @@ export function parseLgrFile(buffer: ArrayBuffer): LgrData {
     if (!pcx) continue;
 
     // QUP/QDOWN: grass edge sprites (not in PICTURES.LST)
-    if (name.startsWith('qup_')) {
-      grassSprites.push({ image: pcxToRgba(pcx, palette), isUp: true });
-      continue;
-    }
-    if (name.startsWith('qdown_')) {
-      grassSprites.push({ image: pcxToRgba(pcx, palette), isUp: false });
+    if (name.startsWith('qup_') || name.startsWith('qdown_')) {
+      const image = pcxToRgba(pcx, palette);
+      const borders: number[] = [];
+      for (let col = 0; col < image.width; col++) {
+        let row = 0;
+        while (row < image.height && image.rgba[(row * image.width + col) * 4 + 3] === 0) row++;
+        borders.push(row);
+      }
+      grassSprites.push({ image, isUp: name.startsWith('qup_'), borders });
       continue;
     }
 
