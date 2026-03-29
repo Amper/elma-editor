@@ -1,22 +1,30 @@
 import { useState, useRef, useEffect } from 'react';
-import { useEditorStore } from '@/state/editorStore';
+import { useEditorStore, extractSelectionData } from '@/state/editorStore';
+import { useLibraryStore } from '@/state/libraryStore';
 import { undo, redo } from '@/state/selectors';
+import { computeBBox } from '@/utils/geometry';
 import type { TestMode } from '@/types';
 import {
   ArrowUDownLeftIcon,
   ArrowUUpRightIcon,
+  BookmarkSimpleIcon,
   CaretDownIcon,
+  CheckIcon,
   ClipboardIcon,
   CopyIcon, FarmIcon,
   FlipHorizontalIcon,
   FlipVerticalIcon,
+  PencilSimpleIcon,
   PlayIcon,
+  PolygonIcon,
   ScissorsIcon, SlidersHorizontalIcon, SubtractSquareIcon,
   TrashIcon,
   UniteSquareIcon,
   UsersIcon,
   WarningIcon,
 } from "@phosphor-icons/react";
+import { ToolId } from '@/types';
+import { SaveToLibraryModal } from './SaveToLibraryModal';
 
 function keyLabel(code: string): string {
   if (code.startsWith('Key')) return code.slice(3);
@@ -120,6 +128,139 @@ function TestModeButton({
   );
 }
 
+function PolygonActionsMenu({
+  canSplit,
+  canMerge,
+  canAutoGrass,
+  canEditVertices,
+  selectVertexEditing,
+  splitSelectedPolygons,
+  mergeSelectedPolygons,
+  mirrorHorizontally,
+  mirrorVertically,
+  autoGrassSelectedPolygons,
+  toggleSelectVertexEditing,
+  showIcon,
+  showLabel,
+  iconSize,
+}: {
+  canSplit: boolean;
+  canMerge: boolean;
+  canAutoGrass: boolean;
+  canEditVertices: boolean;
+  selectVertexEditing: boolean;
+  splitSelectedPolygons: () => void;
+  mergeSelectedPolygons: () => void;
+  mirrorHorizontally: () => void;
+  mirrorVertically: () => void;
+  autoGrassSelectedPolygons: () => void;
+  toggleSelectVertexEditing: () => void;
+  showIcon: boolean;
+  showLabel: boolean;
+  iconSize: number;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  const run = (fn: () => void) => {
+    fn();
+    setOpen(false);
+  };
+
+  return (
+    <div ref={ref} style={{ position: 'relative', display: 'inline-flex', alignSelf: 'stretch' }}>
+      <button
+        onClick={() => setOpen(!open)}
+        className="btn btn--text"
+        title="Polygon actions"
+      >
+        {showIcon && <PolygonIcon size={iconSize} />}
+        {showLabel && <span className="btn--text-label">Polygon actions</span>}
+        <CaretDownIcon size={10} style={{ marginLeft: 2 }} />
+      </button>
+      {open && (
+        <div
+          style={{
+            position: 'absolute',
+            top: '100%',
+            left: 0,
+            zIndex: 100,
+            background: 'var(--color-bg-secondary)',
+            border: '1px solid var(--color-border)',
+            borderRadius: 'var(--radius-md)',
+            padding: '4px 0',
+            minWidth: 180,
+            boxShadow: '0 4px 12px rgba(0,0,0,0.25)',
+          }}
+        >
+          {canEditVertices && (
+            <button
+              className="toolbar-context-menu__item"
+              onClick={() => run(toggleSelectVertexEditing)}
+            >
+              {selectVertexEditing ? <CheckIcon size={14} /> : <PencilSimpleIcon size={14} />}
+              <span className="toolbar-context-menu__label">
+                {selectVertexEditing ? 'Finish editing vertices' : 'Edit polygon vertices'}
+              </span>
+            </button>
+          )}
+          {canEditVertices && <div className="toolbar-context-menu__divider" />}
+          <button
+            className="toolbar-context-menu__item"
+            onClick={() => run(splitSelectedPolygons)}
+            disabled={!canSplit}
+          >
+            <SubtractSquareIcon size={14} />
+            <span className="toolbar-context-menu__label">Split</span>
+          </button>
+          <button
+            className="toolbar-context-menu__item"
+            onClick={() => run(mergeSelectedPolygons)}
+            disabled={!canMerge}
+          >
+            <UniteSquareIcon size={14} />
+            <span className="toolbar-context-menu__label">Merge</span>
+          </button>
+          <div className="toolbar-context-menu__divider" />
+          <button
+            className="toolbar-context-menu__item"
+            onClick={() => run(mirrorHorizontally)}
+          >
+            <FlipHorizontalIcon size={14} />
+            <span className="toolbar-context-menu__label">Mirror horizontally</span>
+          </button>
+          <button
+            className="toolbar-context-menu__item"
+            onClick={() => run(mirrorVertically)}
+          >
+            <FlipVerticalIcon size={14} />
+            <span className="toolbar-context-menu__label">Mirror vertically</span>
+          </button>
+          <div className="toolbar-context-menu__divider" />
+          <button
+            className="toolbar-context-menu__item"
+            onClick={() => run(autoGrassSelectedPolygons)}
+            disabled={!canAutoGrass}
+          >
+            <FarmIcon size={14} />
+            <span className="toolbar-context-menu__label">Auto Grass</span>
+            <span className="toolbar-context-menu__shortcut">T</span>
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function MenuBar() {
   const level = useEditorStore((s) => s.level);
   const selection = useEditorStore((s) => s.selection);
@@ -141,6 +282,9 @@ export function MenuBar() {
   const removePolygons = useEditorStore((s) => s.removePolygons);
   const removeObjects = useEditorStore((s) => s.removeObjects);
   const topologyErrors = useEditorStore((s) => s.topologyErrors);
+  const activeTool = useEditorStore((s) => s.activeTool);
+  const selectVertexEditing = useEditorStore((s) => s.selectVertexEditing);
+  const toggleSelectVertexEditing = useEditorStore((s) => s.toggleSelectVertexEditing);
   const showPropPanel = useEditorStore((s) => s.showPropPanel);
   const setShowPropPanel = useEditorStore((s) => s.setShowPropPanel);
   const showCollabPanel = useEditorStore((s) => s.showCollabPanel);
@@ -167,6 +311,32 @@ export function MenuBar() {
   const canAutoGrass = level != null && level.polygons.some(
     (p) => selection.polygonIds.has(p.id) && !p.grass,
   );
+  const canEditVertices = activeTool === ToolId.Select && toggleSelectVertexEditing != null &&
+    (selectVertexEditing || selection.polygonIds.size === 1);
+
+  const [showSaveModal, setShowSaveModal] = useState(false);
+
+  const handleSaveConfirm = (name: string) => {
+    if (!level) return;
+    const data = extractSelectionData(level, selection);
+    const points = [
+      ...data.polygons.flatMap((p) => p.vertices),
+      ...data.objects.map((o) => ({ x: o.x, y: o.y })),
+      ...data.pictures.map((p) => ({ x: p.x, y: p.y })),
+    ];
+    if (points.length === 0) return;
+    const bbox = computeBBox(points);
+    const cx = (bbox.minX + bbox.maxX) / 2;
+    const cy = (bbox.minY + bbox.maxY) / 2;
+    const polygons = data.polygons.map((p) => ({
+      ...p,
+      vertices: p.vertices.map((v) => ({ x: v.x - cx, y: v.y - cy })),
+    }));
+    const objects = data.objects.map((o) => ({ ...o, x: o.x - cx, y: o.y - cy }));
+    const pictures = data.pictures.map((p) => ({ ...p, x: p.x - cx, y: p.y - cy }));
+    useLibraryStore.getState().addItem({ name, polygons, objects, pictures });
+    setShowSaveModal(false);
+  };
 
   return (
     <>
@@ -212,52 +382,26 @@ export function MenuBar() {
       {hasSelection && (
         <>
           <span className="separator" />
-          {canSplit && (
-            <button
-              onClick={splitSelectedPolygons}
-              title="Split selected polygons (X)"
-              className="btn btn--text"
-            >
-              {showIcon && <SubtractSquareIcon size={iconSize} />}
-              {showLabel && <span className="btn--text-label">Split</span>}
-            </button>
-          )}
-          {canMerge && (
-            <button
-              onClick={mergeSelectedPolygons}
-              title="Merge selected polygons (M)"
-              className="btn btn--text"
-            >
-              {showIcon && <UniteSquareIcon size={iconSize} />}
-              {showLabel && <span className="btn--text-label">Merge</span>}
-            </button>
-          )}
-          <button
-            onClick={mirrorHorizontally}
-            title="Mirror horizontally"
-            className="btn btn--text"
-          >
-            {showIcon && <FlipHorizontalIcon size={iconSize} />}
-            {showLabel && <span className="btn--text-label">Mirror H</span>}
+          <PolygonActionsMenu
+            canSplit={canSplit}
+            canMerge={canMerge}
+            canAutoGrass={canAutoGrass}
+            canEditVertices={canEditVertices}
+            selectVertexEditing={!!selectVertexEditing}
+            splitSelectedPolygons={splitSelectedPolygons}
+            mergeSelectedPolygons={mergeSelectedPolygons}
+            mirrorHorizontally={mirrorHorizontally}
+            mirrorVertically={mirrorVertically}
+            autoGrassSelectedPolygons={autoGrassSelectedPolygons}
+            toggleSelectVertexEditing={toggleSelectVertexEditing!}
+            showIcon={showIcon}
+            showLabel={showLabel}
+            iconSize={iconSize}
+          />
+          <button onClick={() => setShowSaveModal(true)} title="Save selection to library" className="btn btn--text">
+            {showIcon && <BookmarkSimpleIcon size={iconSize} />}
+            {showLabel && <span className="btn--text-label">Save to library</span>}
           </button>
-          <button
-            onClick={mirrorVertically}
-            title="Mirror vertically"
-            className="btn btn--text"
-          >
-            {showIcon && <FlipVerticalIcon size={iconSize} />}
-            {showLabel && <span className="btn--text-label">Mirror V</span>}
-          </button>
-          {canAutoGrass && (
-            <button
-              onClick={autoGrassSelectedPolygons}
-              title="Generate grass for selected polygons (T)"
-              className="btn btn--text"
-            >
-              {showIcon && <FarmIcon size={iconSize} />}
-              {showLabel && <span className="btn--text-label">Auto Grass</span>}
-            </button>
-          )}
         </>
       )}
       {topologyErrors.length > 0 && (
@@ -296,6 +440,12 @@ export function MenuBar() {
       >
         <SlidersHorizontalIcon size={18} />
       </button>
+      {showSaveModal && (
+        <SaveToLibraryModal
+          onSave={handleSaveConfirm}
+          onCancel={() => setShowSaveModal(false)}
+        />
+      )}
     </>
   );
 }

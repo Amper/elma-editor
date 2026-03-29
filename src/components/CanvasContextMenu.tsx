@@ -207,16 +207,17 @@ export function CanvasContextMenu({ x, y, onClose }: Props) {
             <span className="canvas-context-menu__label">Mirror vertically</span>
           </button>
         )}
-        {hasSelection && (
-          <button className="canvas-context-menu__item" onClick={handleSaveToLibrary}>
-            <BookmarkSimpleIcon size={14} />
-            <span className="canvas-context-menu__label">Save to library</span>
-          </button>
-        )}
         {canAutoGrass && (
           <button className="canvas-context-menu__item" onClick={act(autoGrassSelectedPolygons)}>
             <FarmIcon size={14} />
             <span className="canvas-context-menu__label">Auto Grass</span>
+          </button>
+        )}
+        {hasSelection && <div className="canvas-context-menu__divider" />}
+        {hasSelection && (
+          <button className="canvas-context-menu__item" onClick={handleSaveToLibrary}>
+            <BookmarkSimpleIcon size={14} />
+            <span className="canvas-context-menu__label">Save to library</span>
           </button>
         )}
       </div>
