@@ -247,6 +247,23 @@ function applyAppleProperty(motor: MotorState, property: ObjectProperty): void {
   }
 }
 
+/** Advance physics by the given wall-clock delta (seconds).
+ *  Extracted so volt keydown handlers can trigger immediate physics updates. */
+export function advancePhysics(state: GameState, wallDtSeconds: number): void {
+  if (state.result !== 'playing') return;
+
+  const cappedDt = Math.min(wallDtSeconds, 0.1);
+  const gameTimeDelta = cappedDt * 1000.0 * 0.182 * 0.0024;
+  state.accumulator += gameTimeDelta;
+
+  while (state.accumulator > 1e-6 && state.result === 'playing') {
+    const dt = Math.min(PHYSICS_DT, state.accumulator);
+    physicsStep(state, dt);
+    state.gameTime += dt;
+    state.accumulator -= dt;
+  }
+}
+
 /** Main frame callback - called via requestAnimationFrame */
 export function gameFrame(state: GameState, timestamp: number): void {
   if (!state.running) return;
@@ -278,23 +295,7 @@ export function gameFrame(state: GameState, timestamp: number): void {
     calculateHeadPosition(motor);
   }
 
-  // Cap max delta to prevent spiral of death (100ms max)
-  const cappedDt = Math.min(wallDt, 0.1);
-
-  // Convert wall time (seconds) to game time units
-  // game_time = wall_seconds * 1000 * STOPWATCH_MULTIPLIER * 0.0024
-  // = wall_seconds * 1000 * 0.182 * 0.0024
-  // = wall_seconds * 0.4368
-  const gameTimeDelta = cappedDt * 1000.0 * 0.182 * 0.0024;
-  state.accumulator += gameTimeDelta;
-
-  // Fixed timestep physics loop
-  while (state.accumulator > 1e-6 && state.result === 'playing') {
-    const dt = Math.min(PHYSICS_DT, state.accumulator);
-    physicsStep(state, dt);
-    state.gameTime += dt;
-    state.accumulator -= dt;
-  }
+  advancePhysics(state, wallDt);
 
   // Update camera
   updateCamera(state.camera, motor.bike.r.x, motor.bike.r.y);

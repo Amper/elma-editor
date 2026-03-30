@@ -17,6 +17,7 @@ export class DrawPolygonTool implements EditorTool {
   private continuationMode = false;
   private lockedVertexCount = 0;
   private continuationGrass = false;
+  private continuationPolyId: string | null = null;
 
   constructor(private getStore: () => EditorState, private forceGrass?: boolean) {}
 
@@ -25,6 +26,7 @@ export class DrawPolygonTool implements EditorTool {
     this.previewVertex = null;
     this.hoveredHit = { kind: 'none' };
     this.continuationMode = false;
+    this.continuationPolyId = null;
     this.lockedVertexCount = 0;
     if (this.forceGrass !== undefined) {
       this.getStore().setDrawPolygonGrass(this.forceGrass);
@@ -32,10 +34,8 @@ export class DrawPolygonTool implements EditorTool {
   }
 
   deactivate() {
-    if (this.continuationMode) {
-      this.getStore().cancelUndoBatch();
-      this.continuationMode = false;
-    }
+    this.continuationMode = false;
+    this.continuationPolyId = null;
     this.vertices = [];
     this.previewVertex = null;
     this.hoveredHit = { kind: 'none' };
@@ -95,8 +95,8 @@ export class DrawPolygonTool implements EditorTool {
       this.commitPolygon();
     } else if (e.key === 'Escape') {
       if (this.continuationMode) {
-        this.getStore().cancelUndoBatch();
         this.continuationMode = false;
+        this.continuationPolyId = null;
         this.lockedVertexCount = 0;
       }
       this.vertices = [];
@@ -272,10 +272,7 @@ export class DrawPolygonTool implements EditorTool {
       rotated.push(originalVerts[(startIdx + i) % n]!);
     }
 
-    // Begin undo batch before removing
-    store.beginUndoBatch();
-    store.removePolygons([hit.polygonId]);
-
+    this.continuationPolyId = hit.polygonId;
     this.vertices = rotated;
     this.lockedVertexCount = n;
     this.continuationMode = true;
@@ -297,15 +294,17 @@ export class DrawPolygonTool implements EditorTool {
       ? this.continuationGrass
       : this.getStore().drawPolygonGrass;
 
-    this.getStore().addPolygon({
-      grass,
-      vertices: [...this.vertices],
-    });
-
     if (this.continuationMode) {
-      this.getStore().endUndoBatch();
+      const store = this.getStore();
+      store.beginUndoBatch();
+      store.removePolygons([this.continuationPolyId!]);
+      store.addPolygon({ grass, vertices: [...this.vertices] });
+      store.endUndoBatch();
       this.continuationMode = false;
+      this.continuationPolyId = null;
       this.lockedVertexCount = 0;
+    } else {
+      this.getStore().addPolygon({ grass, vertices: [...this.vertices] });
     }
 
     this.vertices = [];

@@ -5,7 +5,7 @@ import { InputManager, DEFAULT_KEYS, type KeyBindings } from './engine/input/Inp
 import { CanvasRenderer } from './engine/render/CanvasRenderer';
 import { WebGLRenderer } from './engine/render/WebGLRenderer';
 import { loadLgrData } from '@/canvas/lgrCache';
-import { createGame, gameFrame, type GameState } from './engine/game/GameLoop';
+import { createGame, gameFrame, advancePhysics, type GameState } from './engine/game/GameLoop';
 import type { LevelData } from './engine/level/Level';
 import { gameCameraRef } from './gameCameraRef';
 import { Vec2 } from './engine/core/Vec2';
@@ -253,6 +253,26 @@ export function GameOverlay() {
     };
     canvas.addEventListener('click', handleClick);
 
+    // Immediately advance physics on volt keydown to reduce input lag.
+    // The original game polls input at hundreds of Hz (uncapped main loop),
+    // but RAF limits us to ~60Hz. This handler fires on keydown and runs
+    // physics up to the current time so volts are processed without waiting
+    // for the next RAF callback.
+    const voltKeys = new Set([keys.alovolt, keys.rightVolt, keys.leftVolt]);
+    const handleVoltKeyDown = (e: KeyboardEvent) => {
+      if (!voltKeys.has(e.code)) return;
+      if (!gameState.running || gameState.result !== 'playing') return;
+      if (gameState.lastTimestamp === 0) return;
+
+      const now = performance.now();
+      const wallDt = (now - gameState.lastTimestamp) / 1000;
+      if (wallDt > 0) {
+        gameState.lastTimestamp = now;
+        advancePhysics(gameState, wallDt);
+      }
+    };
+    window.addEventListener('keydown', handleVoltKeyDown);
+
     const renderOpts = { showGrass: tc.showGrass, showPictures: tc.showPictures, showTextures: tc.showTextures, objectsAnimation: tc.objectsAnimation };
 
     // Notify collab server that testing started
@@ -418,6 +438,7 @@ export function GameOverlay() {
       cancelAnimationFrame(animFrame);
       canvas.removeEventListener('wheel', handleWheel);
       canvas.removeEventListener('click', handleClick);
+      window.removeEventListener('keydown', handleVoltKeyDown);
       observer.disconnect();
       input.destroy();
       if (isWebGL) {
