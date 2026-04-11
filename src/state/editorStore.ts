@@ -374,6 +374,14 @@ export interface EditorState {
   minimapOpacity: number;
   setMinimapOpacity: (value: number) => void;
 
+  /** Whether editor and test mode share the same zoom value. */
+  sharedTestZoom: boolean;
+  setSharedTestZoom: (shared: boolean) => void;
+  /** Saved test-mode zoom (camera units). null = use editor zoom. */
+  savedTestZoom: number | null;
+  /** Editor zoom saved before entering test mode (transient). */
+  preTestEditorZoom: number | null;
+
   // ── Level I/O ──
   loadLevel: (level: Level, fileName: string) => void;
   newLevel: () => void;
@@ -613,6 +621,9 @@ export const useEditorStore = create<EditorState>()(
       showStatusBar: true,
       showMinimap: true,
       minimapOpacity: 80,
+      sharedTestZoom: true,
+      savedTestZoom: null,
+      preTestEditorZoom: null,
       showGrass: true,
       showPictures: true,
       showTextures: true,
@@ -1508,6 +1519,7 @@ export const useEditorStore = create<EditorState>()(
       setShowStatusBar: (show) => set({ showStatusBar: show }),
       setShowMinimap: (show) => set({ showMinimap: show }),
       setMinimapOpacity: (value) => set({ minimapOpacity: Math.max(0, Math.min(100, value)) }),
+      setSharedTestZoom: (shared) => set({ sharedTestZoom: shared }),
 
       // ── Testing ──
 
@@ -1524,9 +1536,20 @@ export const useEditorStore = create<EditorState>()(
           set({ topologyErrors: errors, showValidationPanel: true });
           return;
         }
-        set({ isTesting: true, showLevelScreen: false, showValidationPanel: false, testMode: effectiveMode, debugTrajectory: null });
+        const patch: Record<string, unknown> = { isTesting: true, showLevelScreen: false, showValidationPanel: false, testMode: effectiveMode, debugTrajectory: null };
+        if (!get().sharedTestZoom) {
+          patch.preTestEditorZoom = get().viewport.zoom;
+        }
+        set(patch);
       },
-      stopTesting: () => set({ isTesting: false }),
+      stopTesting: () => {
+        const { sharedTestZoom, preTestEditorZoom, viewport } = get();
+        const patch: Record<string, unknown> = { isTesting: false, preTestEditorZoom: null };
+        if (!sharedTestZoom && preTestEditorZoom != null) {
+          patch.viewport = { ...viewport, zoom: preTestEditorZoom };
+        }
+        set(patch);
+      },
 
       // ── Debug start ──
 
@@ -1782,6 +1805,8 @@ useEditorStore.subscribe((state) => {
     actionsBarButtonSize: state.actionsBarButtonSize,
     showMinimap: state.showMinimap,
     minimapOpacity: state.minimapOpacity,
+    sharedTestZoom: state.sharedTestZoom,
+    savedTestZoom: state.savedTestZoom,
   });
   const testConfig = JSON.stringify(state.testConfig);
   const debugStart = JSON.stringify(state.debugStart);
@@ -1841,6 +1866,8 @@ function restoreFromLocalStorage(): void {
       if (props.actionsBarButtonSize) patch.actionsBarButtonSize = props.actionsBarButtonSize;
       if (props.showMinimap !== undefined) patch.showMinimap = props.showMinimap;
       if (props.minimapOpacity !== undefined && isFinite(props.minimapOpacity)) patch.minimapOpacity = props.minimapOpacity;
+      if (props.sharedTestZoom !== undefined) patch.sharedTestZoom = props.sharedTestZoom;
+      if (props.savedTestZoom !== undefined) patch.savedTestZoom = props.savedTestZoom;
     }
   } catch {
     localStorage.removeItem(LS_EDITOR_PROPS_KEY);

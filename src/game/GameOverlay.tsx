@@ -229,16 +229,26 @@ export function GameOverlay() {
 
     // Sync zoom from editor viewport
     const PIXELS_PER_METER = 48;
+    const { sharedTestZoom, savedTestZoom } = useEditorStore.getState();
     const editorZoom = useEditorStore.getState().viewport.zoom;
-    gameState.camera.zoom = editorZoom / PIXELS_PER_METER;
+    if (!sharedTestZoom && savedTestZoom != null) {
+      gameState.camera.zoom = savedTestZoom;
+    } else {
+      gameState.camera.zoom = editorZoom / PIXELS_PER_METER;
+    }
 
     // Mouse wheel zoom — syncs back to editor viewport
     const handleWheel = (e: WheelEvent) => {
       e.preventDefault();
       const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
       gameState.camera.zoom = Math.max(0.2, Math.min(5, gameState.camera.zoom * factor));
-      const vp = useEditorStore.getState().viewport;
-      useEditorStore.getState().setViewport({ ...vp, zoom: gameState.camera.zoom * PIXELS_PER_METER });
+      const store = useEditorStore.getState();
+      if (store.sharedTestZoom) {
+        const vp = store.viewport;
+        store.setViewport({ ...vp, zoom: gameState.camera.zoom * PIXELS_PER_METER });
+      } else {
+        useEditorStore.setState({ savedTestZoom: gameState.camera.zoom });
+      }
     };
     canvas.addEventListener('wheel', handleWheel, { passive: false });
 

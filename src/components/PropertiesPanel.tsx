@@ -100,6 +100,8 @@ export function PropertiesPanel() {
 
   const testConfig = useEditorStore((s) => s.testConfig);
   const setTestConfig = useEditorStore((s) => s.setTestConfig);
+  const sharedTestZoom = useEditorStore((s) => s.sharedTestZoom);
+  const setSharedTestZoom = useEditorStore((s) => s.setSharedTestZoom);
 
   const showActionsBar = useEditorStore((s) => s.showActionsBar);
   const setShowActionsBar = useEditorStore((s) => s.setShowActionsBar);
@@ -224,6 +226,21 @@ export function PropertiesPanel() {
           <input type="checkbox" checked={showMinimap} onChange={() => setShowMinimap(!showMinimap)} />
           Show minimap
         </label>
+        <label className="form-label">Editor/test zoom</label>
+        <div className="type-switch">
+          <button
+            className={`type-switch__option${sharedTestZoom ? ' type-switch__option--active' : ''}`}
+            onClick={() => setSharedTestZoom(true)}
+          >
+            Shared
+          </button>
+          <button
+            className={`type-switch__option${!sharedTestZoom ? ' type-switch__option--active' : ''}`}
+            onClick={() => setSharedTestZoom(false)}
+          >
+            Separate
+          </button>
+        </div>
         {showMinimap && (
           <label className="form-label">
             Minimap opacity
