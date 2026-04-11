@@ -199,7 +199,7 @@ export class CollabClient {
         this.userId = msg.userId;
         this.reconnectAttempts = 0;
         const level = levelFromWire(msg.level);
-        store.loadCollabLevel(level, msg.users);
+        store.loadCollabLevel(level, msg.users.filter(u => u.userId !== this.userId));
         break;
       }
 
