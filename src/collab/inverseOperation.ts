@@ -1,6 +1,7 @@
 import type { Level } from 'elmajs';
 import type { Operation } from './operations';
 import type { Vec2 } from '@/types';
+import { applyOperation } from './operationApplier';
 
 /**
  * Compute the inverse of an operation given the level state BEFORE the operation is applied.
@@ -216,7 +217,18 @@ export function computeInverse(level: Level, op: Operation): Operation {
     }
 
     case 'batch': {
-      const inverses = [...op.operations].reverse().map((subOp) => computeInverse(level, subOp));
+      // Build intermediate level states so each sub-inverse is computed
+      // against the correct pre-sub-op state, not the original level.
+      const states: Level[] = [level];
+      let current = level;
+      for (const subOp of op.operations) {
+        current = applyOperation(current, subOp);
+        states.push(current);
+      }
+      const inverses: Operation[] = [];
+      for (let i = op.operations.length - 1; i >= 0; i--) {
+        inverses.push(computeInverse(states[i]!, op.operations[i]!));
+      }
       return { type: 'batch', operations: inverses };
     }
   }

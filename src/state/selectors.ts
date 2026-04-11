@@ -1,4 +1,5 @@
-import { useEditorStore } from './editorStore';
+import { useEditorStore, getCollabUndoStack } from './editorStore';
+import { applyOperation } from '@/collab/operationApplier';
 
 export const useLevel = () => useEditorStore((s) => s.level);
 export const useViewport = () => useEditorStore((s) => s.viewport);
@@ -23,9 +24,33 @@ export const useHasSelection = () =>
 
 /** Call these outside of React components (imperative). */
 export function undo() {
-  useEditorStore.temporal.getState().undo();
+  const state = useEditorStore.getState();
+  if (state.isCollaborating) {
+    // Collab mode: compute inverse of last local op and broadcast it
+    const result = getCollabUndoStack().popUndo();
+    if (!result || !state.level) return;
+    useEditorStore.temporal.getState().pause();
+    const newLevel = applyOperation(state.level, result.inverseOp);
+    useEditorStore.setState({ level: newLevel });
+    useEditorStore.temporal.getState().resume();
+    state.collabClient?.sendOperation(result.inverseOp);
+  } else {
+    useEditorStore.temporal.getState().undo();
+  }
 }
 
 export function redo() {
-  useEditorStore.temporal.getState().redo();
+  const state = useEditorStore.getState();
+  if (state.isCollaborating) {
+    // Collab mode: re-apply the undone operation and broadcast it
+    const result = getCollabUndoStack().popRedo();
+    if (!result || !state.level) return;
+    useEditorStore.temporal.getState().pause();
+    const newLevel = applyOperation(state.level, result.op);
+    useEditorStore.setState({ level: newLevel });
+    useEditorStore.temporal.getState().resume();
+    state.collabClient?.sendOperation(result.op);
+  } else {
+    useEditorStore.temporal.getState().redo();
+  }
 }

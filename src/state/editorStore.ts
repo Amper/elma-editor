@@ -34,6 +34,17 @@ import type { Operation } from '@/collab/operations';
 import type { CollabClient } from '@/collab/CollabClient';
 import type { UserInfo, BikeSnapshot } from '@/collab/protocol';
 import { applyOperation } from '@/collab/operationApplier';
+import { CollabUndoStack } from '@/collab/CollabUndoStack';
+
+// ── Collab undo stack (module-level, not reactive) ──────────────────────────
+
+const collabUndoStack = new CollabUndoStack(100);
+let collabBatchLevelBefore: Level | null = null;
+let collabBatchOps: Operation[] = [];
+
+export function getCollabUndoStack(): CollabUndoStack {
+  return collabUndoStack;
+}
 
 // ── Remote user for collab ───────────────────────────────────────────────────
 
@@ -511,9 +522,19 @@ export interface EditorState {
 export const useEditorStore = create<EditorState>()(
   temporal(
     (set, get) => {
-      const broadcast = (op: Operation) => {
+      /** Broadcast an operation AND record it for collab undo.
+       *  @param levelBefore – the level state before the mutation (from `get().level`) */
+      const broadcast = (op: Operation, levelBefore: Level) => {
         const client = get().collabClient;
-        if (client?.connected) client.sendOperation(op);
+        if (client?.connected) {
+          if (collabBatchLevelBefore) {
+            // Inside an undo batch (e.g. drag): collect ops, push single entry on endUndoBatch
+            collabBatchOps.push(op);
+          } else {
+            collabUndoStack.push(op, levelBefore);
+          }
+          client.sendOperation(op);
+        }
       };
 
       return ({
@@ -743,8 +764,8 @@ export const useEditorStore = create<EditorState>()(
         const ops: Operation[] = [];
         if (selection.polygonIds.size > 0) ops.push({ type: 'removePolygons', ids: [...selection.polygonIds] });
         if (selection.objectIds.size > 0) ops.push({ type: 'removeObjects', ids: [...selection.objectIds] });
-        if (ops.length === 1) broadcast(ops[0]!);
-        else if (ops.length > 1) broadcast({ type: 'batch', operations: ops });
+        if (ops.length === 1) broadcast(ops[0]!, level);
+        else if (ops.length > 1) broadcast({ type: 'batch', operations: ops }, level);
       },
 
       pasteClipboard: () => {
@@ -811,8 +832,8 @@ export const useEditorStore = create<EditorState>()(
           const od = clipboard.objects[i]!;
           pasteOps.push({ type: 'addObject', id: newObjIds[i]!, x: od.x + offset, y: od.y + offset, objectType: od.type, gravity: od.gravity, animation: od.animation });
         }
-        if (pasteOps.length === 1) broadcast(pasteOps[0]!);
-        else if (pasteOps.length > 1) broadcast({ type: 'batch', operations: pasteOps });
+        if (pasteOps.length === 1) broadcast(pasteOps[0]!, level);
+        else if (pasteOps.length > 1) broadcast({ type: 'batch', operations: pasteOps }, level);
       },
 
       // ── Library ──
@@ -895,8 +916,8 @@ export const useEditorStore = create<EditorState>()(
           const pd = item.pictures[i]!;
           libOps.push({ type: 'addPicture', id: newPicIds[i]!, x: pd.x + cx, y: pd.y + cy, name: pd.name, clip: pd.clip, distance: pd.distance, texture: pd.texture || undefined, mask: pd.mask || undefined });
         }
-        if (libOps.length === 1) broadcast(libOps[0]!);
-        else if (libOps.length > 1) broadcast({ type: 'batch', operations: libOps });
+        if (libOps.length === 1) broadcast(libOps[0]!, level);
+        else if (libOps.length > 1) broadcast({ type: 'batch', operations: libOps }, level);
       },
 
       // ── Level mutations ──
@@ -911,7 +932,7 @@ export const useEditorStore = create<EditorState>()(
         poly.vertices = data.vertices.map((v) => new Position(v.x, v.y));
         clone.polygons.push(poly);
         set({ level: clone, isDirty: true });
-        broadcast({ type: 'addPolygon', id: poly.id, grass: poly.grass, vertices: poly.vertices.map(v => ({ x: v.x, y: v.y })) });
+        broadcast({ type: 'addPolygon', id: poly.id, grass: poly.grass, vertices: poly.vertices.map(v => ({ x: v.x, y: v.y })) }, level);
       },
 
       addPolygons: (data) => {
@@ -928,7 +949,7 @@ export const useEditorStore = create<EditorState>()(
           newPolygons.push(poly);
         }
         set({ level: clone, isDirty: true });
-        broadcast({ type: 'addPolygons', polygons: newPolygons.map(p => ({ id: p.id, grass: p.grass, vertices: p.vertices.map(v => ({ x: v.x, y: v.y })) })) });
+        broadcast({ type: 'addPolygons', polygons: newPolygons.map(p => ({ id: p.id, grass: p.grass, vertices: p.vertices.map(v => ({ x: v.x, y: v.y })) })) }, level);
       },
 
       removePolygons: (ids) => {
@@ -938,7 +959,7 @@ export const useEditorStore = create<EditorState>()(
         const idSet = new Set(ids);
         clone.polygons = clone.polygons.filter(p => !idSet.has(p.id));
         set({ level: clone, isDirty: true, selection: emptySelection() });
-        broadcast({ type: 'removePolygons', ids });
+        broadcast({ type: 'removePolygons', ids }, level);
       },
 
       setPolygonGrass: (id, grass) => {
@@ -949,7 +970,7 @@ export const useEditorStore = create<EditorState>()(
         if (!poly) return;
         poly.grass = grass;
         set({ level: clone, isDirty: true });
-        broadcast({ type: 'setPolygonGrass', id, grass });
+        broadcast({ type: 'setPolygonGrass', id, grass }, level);
       },
 
       setPolygonsGrass: (ids, grass) => {
@@ -961,7 +982,7 @@ export const useEditorStore = create<EditorState>()(
           if (idSet.has(poly.id)) poly.grass = grass;
         }
         set({ level: clone, isDirty: true });
-        broadcast({ type: 'setPolygonsGrass', ids, grass });
+        broadcast({ type: 'setPolygonsGrass', ids, grass }, level);
       },
 
       moveVertices: (moves) => {
@@ -978,7 +999,7 @@ export const useEditorStore = create<EditorState>()(
           }
         }
         set({ level: clone, isDirty: true });
-        broadcast({ type: 'moveVertices', moves });
+        broadcast({ type: 'moveVertices', moves }, level);
       },
 
       insertVertex: (polyId, afterVertIdx, pos) => {
@@ -990,7 +1011,7 @@ export const useEditorStore = create<EditorState>()(
         if (!poly) return;
         poly.vertices.splice(afterVertIdx, 0, new Position(pos.x, pos.y));
         set({ level: clone, isDirty: true });
-        broadcast({ type: 'insertVertex', polyId, afterVertIdx, pos });
+        broadcast({ type: 'insertVertex', polyId, afterVertIdx, pos }, level);
       },
 
       removeVertex: (polyId, vertIdx) => {
@@ -1002,7 +1023,7 @@ export const useEditorStore = create<EditorState>()(
         const clone = cloneLevel(level);
         clone.polygons[pi]!.vertices.splice(vertIdx, 1);
         set({ level: clone, isDirty: true });
-        broadcast({ type: 'removeVertex', polyId, vertIdx });
+        broadcast({ type: 'removeVertex', polyId, vertIdx }, level);
       },
 
       removeVertices: (verts) => {
@@ -1022,7 +1043,7 @@ export const useEditorStore = create<EditorState>()(
           }
         }
         set({ level: clone, isDirty: true, selection: emptySelection() });
-        broadcast({ type: 'removeVertices', verts: [...verts.entries()].map(([polyId, indices]) => ({ polyId, vertIndices: [...indices] })) });
+        broadcast({ type: 'removeVertices', verts: [...verts.entries()].map(([polyId, indices]) => ({ polyId, vertIndices: [...indices] })) }, level);
       },
 
       addObject: (data) => {
@@ -1038,7 +1059,7 @@ export const useEditorStore = create<EditorState>()(
         obj.animation = data.animation;
         clone.objects.push(obj);
         set({ level: clone, isDirty: true });
-        broadcast({ type: 'addObject', id: obj.id, x: obj.position.x, y: obj.position.y, objectType: obj.type, gravity: obj.gravity, animation: obj.animation });
+        broadcast({ type: 'addObject', id: obj.id, x: obj.position.x, y: obj.position.y, objectType: obj.type, gravity: obj.gravity, animation: obj.animation }, level);
       },
 
       addPicture: (data) => {
@@ -1056,7 +1077,7 @@ export const useEditorStore = create<EditorState>()(
         if (data.texture && data.mask) pic.name = '';
         clone.pictures.push(pic);
         set({ level: clone, isDirty: true });
-        broadcast({ type: 'addPicture', id: pic.id, x: pic.position.x, y: pic.position.y, name: pic.name, clip: pic.clip, distance: pic.distance, texture: pic.texture || undefined, mask: pic.mask || undefined });
+        broadcast({ type: 'addPicture', id: pic.id, x: pic.position.x, y: pic.position.y, name: pic.name, clip: pic.clip, distance: pic.distance, texture: pic.texture || undefined, mask: pic.mask || undefined }, level);
       },
 
       removePictures: (ids) => {
@@ -1066,7 +1087,7 @@ export const useEditorStore = create<EditorState>()(
         const idSet = new Set(ids);
         clone.pictures = clone.pictures.filter(p => !idSet.has(p.id));
         set({ level: clone, isDirty: true, selection: emptySelection() });
-        broadcast({ type: 'removePictures', ids });
+        broadcast({ type: 'removePictures', ids }, level);
       },
 
       movePictures: (moves) => {
@@ -1081,7 +1102,7 @@ export const useEditorStore = create<EditorState>()(
           }
         }
         set({ level: clone, isDirty: true });
-        broadcast({ type: 'movePictures', moves });
+        broadcast({ type: 'movePictures', moves }, level);
       },
 
       updatePictures: (ids, data) => {
@@ -1098,7 +1119,7 @@ export const useEditorStore = create<EditorState>()(
           if (data.mask !== undefined) pic.mask = data.mask;
         }
         set({ level: clone, isDirty: true });
-        broadcast({ type: 'updatePictures', ids, data });
+        broadcast({ type: 'updatePictures', ids, data }, level);
       },
 
       removeObjects: (ids) => {
@@ -1108,7 +1129,7 @@ export const useEditorStore = create<EditorState>()(
         const idSet = new Set(ids);
         clone.objects = clone.objects.filter(o => !idSet.has(o.id));
         set({ level: clone, isDirty: true, selection: emptySelection() });
-        broadcast({ type: 'removeObjects', ids });
+        broadcast({ type: 'removeObjects', ids }, level);
       },
 
       moveObjects: (moves) => {
@@ -1124,7 +1145,7 @@ export const useEditorStore = create<EditorState>()(
           }
         }
         set({ level: clone, isDirty: true });
-        broadcast({ type: 'moveObjects', moves });
+        broadcast({ type: 'moveObjects', moves }, level);
       },
 
       updateObjects: (ids, data) => {
@@ -1139,7 +1160,7 @@ export const useEditorStore = create<EditorState>()(
           if (data.animation !== undefined) obj.animation = data.animation;
         }
         set({ level: clone, isDirty: true });
-        broadcast({ type: 'updateObjects', ids, data });
+        broadcast({ type: 'updateObjects', ids, data }, level);
       },
 
       setLevelName: (name) => {
@@ -1148,7 +1169,7 @@ export const useEditorStore = create<EditorState>()(
         const clone = cloneLevel(level);
         clone.name = name;
         set({ level: clone, isDirty: true });
-        broadcast({ type: 'setLevelName', name });
+        broadcast({ type: 'setLevelName', name }, level);
       },
 
       setLevelGround: (ground) => {
@@ -1157,7 +1178,7 @@ export const useEditorStore = create<EditorState>()(
         const clone = cloneLevel(level);
         clone.ground = ground;
         set({ level: clone, isDirty: true });
-        broadcast({ type: 'setLevelGround', ground });
+        broadcast({ type: 'setLevelGround', ground }, level);
       },
 
       setLevelSky: (sky) => {
@@ -1166,7 +1187,7 @@ export const useEditorStore = create<EditorState>()(
         const clone = cloneLevel(level);
         clone.sky = sky;
         set({ level: clone, isDirty: true });
-        broadcast({ type: 'setLevelSky', sky });
+        broadcast({ type: 'setLevelSky', sky }, level);
       },
 
       setLevelLgr: (lgr) => {
@@ -1198,7 +1219,7 @@ export const useEditorStore = create<EditorState>()(
         clone.polygons.push(...result);
 
         set({ level: clone, isDirty: true, selection: emptySelection() });
-        broadcast({ type: 'replacePolygons', removeIds: [...selection.polygonIds], add: result.map(p => ({ id: p.id, grass: p.grass, vertices: p.vertices.map(v => ({ x: v.x, y: v.y })) })) });
+        broadcast({ type: 'replacePolygons', removeIds: [...selection.polygonIds], add: result.map(p => ({ id: p.id, grass: p.grass, vertices: p.vertices.map(v => ({ x: v.x, y: v.y })) })) }, level);
       },
 
       splitSelectedPolygons: () => {
@@ -1224,7 +1245,7 @@ export const useEditorStore = create<EditorState>()(
         clone.polygons.push(...result);
 
         set({ level: clone, isDirty: true, selection: emptySelection() });
-        broadcast({ type: 'replacePolygons', removeIds: [...selection.polygonIds], add: result.map(p => ({ id: p.id, grass: p.grass, vertices: p.vertices.map(v => ({ x: v.x, y: v.y })) })) });
+        broadcast({ type: 'replacePolygons', removeIds: [...selection.polygonIds], add: result.map(p => ({ id: p.id, grass: p.grass, vertices: p.vertices.map(v => ({ x: v.x, y: v.y })) })) }, level);
       },
 
       autoGrassSelectedPolygons: () => {
@@ -1288,7 +1309,7 @@ export const useEditorStore = create<EditorState>()(
         }
 
         set({ level: clone, isDirty: true });
-        broadcast({ type: 'addPolygons', polygons: newGrassPolys.map(p => ({ id: p.id, grass: p.grass, vertices: p.vertices.map(v => ({ x: v.x, y: v.y })) })) });
+        broadcast({ type: 'addPolygons', polygons: newGrassPolys.map(p => ({ id: p.id, grass: p.grass, vertices: p.vertices.map(v => ({ x: v.x, y: v.y })) })) }, level);
       },
 
       mirrorHorizontally: () => {
@@ -1342,8 +1363,8 @@ export const useEditorStore = create<EditorState>()(
           if (objMoves.length > 0) mirrorOps.push({ type: 'moveObjects', moves: objMoves });
           const picMoves = clone.pictures.filter(p => selection.pictureIds.has(p.id)).map(p => ({ pictureId: p.id, newPos: { x: p.position.x, y: p.position.y } }));
           if (picMoves.length > 0) mirrorOps.push({ type: 'movePictures', moves: picMoves });
-          if (mirrorOps.length === 1) broadcast(mirrorOps[0]!);
-          else if (mirrorOps.length > 1) broadcast({ type: 'batch', operations: mirrorOps });
+          if (mirrorOps.length === 1) broadcast(mirrorOps[0]!, level);
+          else if (mirrorOps.length > 1) broadcast({ type: 'batch', operations: mirrorOps }, level);
         }
       },
 
@@ -1397,8 +1418,8 @@ export const useEditorStore = create<EditorState>()(
           if (objMoves.length > 0) mirrorOps.push({ type: 'moveObjects', moves: objMoves });
           const picMoves = clone.pictures.filter(p => selection.pictureIds.has(p.id)).map(p => ({ pictureId: p.id, newPos: { x: p.position.x, y: p.position.y } }));
           if (picMoves.length > 0) mirrorOps.push({ type: 'movePictures', moves: picMoves });
-          if (mirrorOps.length === 1) broadcast(mirrorOps[0]!);
-          else if (mirrorOps.length > 1) broadcast({ type: 'batch', operations: mirrorOps });
+          if (mirrorOps.length === 1) broadcast(mirrorOps[0]!, level);
+          else if (mirrorOps.length > 1) broadcast({ type: 'batch', operations: mirrorOps }, level);
         }
       },
 
@@ -1415,7 +1436,7 @@ export const useEditorStore = create<EditorState>()(
         }
         set({ level: clone, isDirty: true });
         if (smoothed.length > 0) {
-          broadcast({ type: 'replacePolygons', removeIds: smoothed.map(p => p.id), add: smoothed });
+          broadcast({ type: 'replacePolygons', removeIds: smoothed.map(p => p.id), add: smoothed }, level);
         }
       },
 
@@ -1439,7 +1460,7 @@ export const useEditorStore = create<EditorState>()(
         }
         if (simplified.length === 0) return;
         set({ level: clone, isDirty: true });
-        broadcast({ type: 'replacePolygons', removeIds: simplified.map(p => p.id), add: simplified });
+        broadcast({ type: 'replacePolygons', removeIds: simplified.map(p => p.id), add: simplified }, level);
       },
 
       // ── Topology ──
@@ -1536,6 +1557,11 @@ export const useEditorStore = create<EditorState>()(
         const state = get();
         undoBatchSnapshot = { level: state.level, fileName: state.fileName };
         useEditorStore.temporal.getState().pause();
+        // Collab: save level state and start collecting ops for a single undo entry
+        if (state.collabClient?.connected && state.level) {
+          collabBatchLevelBefore = state.level;
+          collabBatchOps = [];
+        }
       },
       endUndoBatch: () => {
         useEditorStore.temporal.getState().resume();
@@ -1554,6 +1580,15 @@ export const useEditorStore = create<EditorState>()(
           }
           undoBatchSnapshot = null;
         }
+        // Collab: consolidate collected batch ops into a single undo entry
+        if (collabBatchLevelBefore && collabBatchOps.length > 0) {
+          const combinedOp: Operation = collabBatchOps.length === 1
+            ? collabBatchOps[0]!
+            : { type: 'batch', operations: collabBatchOps };
+          collabUndoStack.push(combinedOp, collabBatchLevelBefore);
+        }
+        collabBatchLevelBefore = null;
+        collabBatchOps = [];
       },
       cancelUndoBatch: () => {
         if (undoBatchSnapshot) {
@@ -1562,18 +1597,29 @@ export const useEditorStore = create<EditorState>()(
           undoBatchSnapshot = null;
         }
         useEditorStore.temporal.getState().resume();
+        // Discard collab batch without recording
+        collabBatchLevelBefore = null;
+        collabBatchOps = [];
       },
 
       // ── Collab ──
 
-      setCollabClient: (client) => set({ collabClient: client, isCollaborating: client !== null }),
+      setCollabClient: (client) => {
+        set({ collabClient: client, isCollaborating: client !== null });
+        if (!client) collabUndoStack.clear();
+      },
       setShowCollabPanel: (show) => set({ showCollabPanel: show }),
 
       applyRemoteOperation: (op, _userId) => {
         const { level } = get();
         if (!level) return;
+        // Pause zundo so remote ops don't create local undo snapshots
+        useEditorStore.temporal.getState().pause();
         const newLevel = applyOperation(level, op);
         set({ level: newLevel });
+        useEditorStore.temporal.getState().resume();
+        // Remote ops invalidate the local redo stack
+        collabUndoStack.clearRedo();
       },
 
       loadCollabLevel: (level, users) => {
@@ -1590,6 +1636,7 @@ export const useEditorStore = create<EditorState>()(
           });
         }
         set({ level, isCollaborating: true, remoteUsers, selection: emptySelection() });
+        collabUndoStack.clear();
       },
 
       addRemoteUser: (user) => {
