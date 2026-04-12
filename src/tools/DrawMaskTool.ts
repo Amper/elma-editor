@@ -49,6 +49,7 @@ export class DrawMaskTool implements EditorTool {
 
   onKeyDown(e: KeyboardEvent) {
     if (e.key === 'c' || e.key === 'C') {
+      e.preventDefault();
       const store = this.getStore();
       const current = store.maskConfig.clip;
       const next = current === Clip.Unclipped ? Clip.Ground

@@ -36,6 +36,7 @@ export class ImageImportTool implements EditorTool {
 
   onKeyDown(e: KeyboardEvent) {
     if (e.key === 'Escape') {
+      e.preventDefault();
       this.getStore().setImageImportPolygons(null);
     }
   }

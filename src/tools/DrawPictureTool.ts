@@ -48,6 +48,7 @@ export class DrawPictureTool implements EditorTool {
   onKeyDown(e: KeyboardEvent) {
     // Cycle clip mode with C key
     if (e.key === 'c' || e.key === 'C') {
+      e.preventDefault();
       const store = this.getStore();
       const current = store.pictureConfig.clip;
       const next = current === Clip.Unclipped ? Clip.Ground

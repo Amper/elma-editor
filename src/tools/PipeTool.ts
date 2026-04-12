@@ -49,11 +49,14 @@ export class PipeTool implements EditorTool {
 
   onKeyDown(e: KeyboardEvent) {
     if (e.key === 'Enter') {
+      e.preventDefault();
       this.commitPipe();
     } else if (e.key === 'Escape') {
+      e.preventDefault();
       this.spine = [];
       this.previewPoint = null;
     } else if (e.key === 'Backspace' && this.spine.length > 0) {
+      e.preventDefault();
       this.spine.pop();
     }
   }

@@ -92,8 +92,10 @@ export class DrawPolygonTool implements EditorTool {
 
   onKeyDown(e: KeyboardEvent) {
     if (e.key === 'Enter') {
+      e.preventDefault();
       this.commitPolygon();
     } else if (e.key === 'Escape') {
+      e.preventDefault();
       if (this.continuationMode) {
         this.continuationMode = false;
         this.continuationPolyId = null;
@@ -103,6 +105,7 @@ export class DrawPolygonTool implements EditorTool {
       this.previewVertex = null;
       this.hoveredHit = { kind: 'none' };
     } else if (e.key === 'Backspace' && this.vertices.length > this.lockedVertexCount) {
+      e.preventDefault();
       this.vertices.pop();
     } else if (e.key === ' ' && this.vertices.length > 0) {
       e.preventDefault();

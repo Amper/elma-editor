@@ -148,6 +148,7 @@ export class VertexTool implements EditorTool {
 
   onKeyDown(e: KeyboardEvent) {
     if (e.key === 'Delete' || e.key === 'Backspace') {
+      e.preventDefault();
       this.deleteSelectedVertices();
     } else if (
       e.key === 'ArrowUp' ||

@@ -423,8 +423,10 @@ export class SelectTool implements EditorTool {
   onKeyDown(e: KeyboardEvent) {
     if (this.state === 'vertex-editing') {
       if (e.key === 'Escape') {
+        e.preventDefault();
         this.exitVertexEditing();
       } else if (e.key === 'Delete' || e.key === 'Backspace') {
+        e.preventDefault();
         this.deleteVertexEditVertices();
       } else if (
         e.key === 'ArrowUp' ||
@@ -439,13 +441,16 @@ export class SelectTool implements EditorTool {
     }
 
     if (e.key === 'Delete' || e.key === 'Backspace') {
+      e.preventDefault();
       this.deleteSelected();
     } else if (e.key === 'm' || e.key === 'M') {
+      e.preventDefault();
       const store = this.getStore();
       if (store.selection.polygonIds.size >= 1) {
         store.mergeSelectedPolygons();
       }
     } else if (e.key === 'x' || e.key === 'X') {
+      e.preventDefault();
       const store = this.getStore();
       const size = store.selection.polygonIds.size;
       if (size >= 1 && size <= 2) {

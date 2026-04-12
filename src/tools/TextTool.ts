@@ -34,6 +34,7 @@ export class TextTool implements EditorTool {
 
   onKeyDown(e: KeyboardEvent) {
     if (e.key === 'Escape') {
+      e.preventDefault();
       this.getStore().setTextPolygons(null);
     }
   }

@@ -186,8 +186,8 @@ export class ShapeTool implements EditorTool {
   onPointerUp() {}
 
   onKeyDown(e: KeyboardEvent) {
-    if (e.key === 'Escape') { this.state = 'idle'; }
-    else if (e.key === 'Enter' && this.state === 'placing') { this.commitShape(); }
+    if (e.key === 'Escape') { e.preventDefault(); this.state = 'idle'; }
+    else if (e.key === 'Enter' && this.state === 'placing') { e.preventDefault(); this.commitShape(); }
     else if (e.key === ' ' && this.getStore().shapeConfig.type === 'random') {
       e.preventDefault();
       this.regenerateRandom();

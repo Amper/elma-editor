@@ -567,6 +567,7 @@ export function EditorCanvas() {
 
       // Grid visibility toggle
       if (e.key.toLowerCase() === 'g' && !ctrl && !e.altKey) {
+        e.preventDefault();
         const store = useEditorStore.getState();
         store.setGrid({ visible: !store.grid.visible });
         return;
@@ -574,12 +575,14 @@ export function EditorCanvas() {
 
       // Auto-grass
       if (e.key.toLowerCase() === 't' && !ctrl && !e.altKey) {
+        e.preventDefault();
         useEditorStore.getState().autoGrassSelectedPolygons();
         return;
       }
 
       // Collab panel toggle
       if (e.key.toLowerCase() === 'c' && !ctrl && !e.altKey) {
+        e.preventDefault();
         const store = useEditorStore.getState();
         store.setShowCollabPanel(!store.showCollabPanel);
         return;
@@ -603,6 +606,7 @@ export function EditorCanvas() {
         };
         const tool = toolMap[e.key.toLowerCase()];
         if (tool) {
+          e.preventDefault();
           useEditorStore.getState().setActiveTool(tool);
           return;
         }
@@ -642,6 +646,7 @@ export function EditorCanvas() {
 
       // Escape
       if (e.key === 'Escape') {
+        e.preventDefault();
         useEditorStore.getState().clearSelection();
       }
 
