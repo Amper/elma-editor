@@ -176,7 +176,8 @@ export function EditorCanvas() {
       setContextMenu(null);
       const rect = canvas.getBoundingClientRect();
       const screenPoint = { x: e.clientX - rect.left, y: e.clientY - rect.top };
-      const delta = e.deltaY < 0 ? 1 : -1;
+      const rawDelta = e.deltaY || e.deltaX;
+      const delta = rawDelta < 0 ? 1 : -1;
       const store = useEditorStore.getState();
       const newVp = zoomAtPoint(
         store.viewport,
