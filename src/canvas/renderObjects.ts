@@ -364,18 +364,8 @@ export function renderPictures(
 ): void {
   if (!lgrAssets || pictures.length === 0) return;
 
-  // Sort by distance (lower = further back = render first)
-  const sorted = [...pictures].sort((a, b) => a.distance - b.distance);
-
-  // Group by clip mode to minimize clip path changes
-  const unclipped: Picture[] = [];
-  const groundClipped: Picture[] = [];
-  const skyClipped: Picture[] = [];
-  for (const pic of sorted) {
-    if (pic.clip === Clip.Ground) groundClipped.push(pic);
-    else if (pic.clip === Clip.Sky) skyClipped.push(pic);
-    else unclipped.push(pic);
-  }
+  // Sort by distance (lower distance = closer to camera = render last / on top)
+  const sorted = [...pictures].sort((a, b) => b.distance - a.distance);
 
   function drawPic(pic: Picture) {
     if (pic.texture && pic.mask) {
@@ -391,32 +381,44 @@ export function renderPictures(
     }
   }
 
-  // 1. Unclipped pictures
-  for (const pic of unclipped) drawPic(pic);
+  // Render in distance order, applying per-picture clipping.
+  // Batch consecutive pictures with the same clip mode to reduce save/restore overhead.
+  let i = 0;
+  while (i < sorted.length) {
+    const clipMode = sorted[i]!.clip;
 
-  // 2. Ground-clipped pictures (only visible in ground areas)
-  if (groundClipped.length > 0) {
-    ctx.save();
-    buildClipPath(ctx, polygons, viewport, canvasW, canvasH);
-    ctx.clip('evenodd');
-    for (const pic of groundClipped) drawPic(pic);
-    ctx.restore();
-  }
-
-  // 3. Sky-clipped pictures (only visible in sky/polygon interior areas)
-  if (skyClipped.length > 0) {
-    ctx.save();
-    const groundPolygons = polygons.filter((p) => !p.grass && p.vertices.length >= 3);
-    ctx.beginPath();
-    for (const poly of groundPolygons) {
-      ctx.moveTo(poly.vertices[0]!.x, poly.vertices[0]!.y);
-      for (let i = 1; i < poly.vertices.length; i++) {
-        ctx.lineTo(poly.vertices[i]!.x, poly.vertices[i]!.y);
+    if (clipMode === Clip.Ground) {
+      ctx.save();
+      buildClipPath(ctx, polygons, viewport, canvasW, canvasH);
+      ctx.clip('evenodd');
+      while (i < sorted.length && sorted[i]!.clip === Clip.Ground) {
+        drawPic(sorted[i]!);
+        i++;
       }
-      ctx.closePath();
+      ctx.restore();
+    } else if (clipMode === Clip.Sky) {
+      ctx.save();
+      const groundPolygons = polygons.filter((p) => !p.grass && p.vertices.length >= 3);
+      ctx.beginPath();
+      for (const poly of groundPolygons) {
+        ctx.moveTo(poly.vertices[0]!.x, poly.vertices[0]!.y);
+        for (let j = 1; j < poly.vertices.length; j++) {
+          ctx.lineTo(poly.vertices[j]!.x, poly.vertices[j]!.y);
+        }
+        ctx.closePath();
+      }
+      ctx.clip('evenodd');
+      while (i < sorted.length && sorted[i]!.clip === Clip.Sky) {
+        drawPic(sorted[i]!);
+        i++;
+      }
+      ctx.restore();
+    } else {
+      // Unclipped: draw directly
+      while (i < sorted.length && sorted[i]!.clip !== Clip.Ground && sorted[i]!.clip !== Clip.Sky) {
+        drawPic(sorted[i]!);
+        i++;
+      }
     }
-    ctx.clip('evenodd');
-    for (const pic of skyClipped) drawPic(pic);
-    ctx.restore();
   }
 }

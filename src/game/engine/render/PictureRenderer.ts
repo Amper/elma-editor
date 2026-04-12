@@ -99,27 +99,81 @@ export class PictureRenderer {
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 
-    // Sort by distance (lower distance = further back = render first)
-    const sorted = [...level.sprites].sort((a, b) => a.distance - b.distance);
+    // Sort by distance (lower distance = closer to camera = render last / on top)
+    const sorted = [...level.sprites].sort((a, b) => b.distance - a.distance);
 
-    // Separate regular pictures from texture-mask sprites
-    const regularSprites = sorted.filter((s) => !s.textureName || !s.maskName);
-    const maskSprites = sorted.filter((s) => s.textureName && s.maskName);
+    // Render in distance order, switching shader programs as needed
+    let currentShader: 'sprite' | 'mask' | null = null;
 
-    // ── Draw regular pictures with sprite shader (skipped when showPictures is off) ──
-    if (showPictures && regularSprites.length > 0) {
-      ctx.useProgram(ctx.spriteProgram);
-      ctx.setUniform(ctx.spriteProgram, 'u_viewProjection', viewProj);
-      ctx.setUniform(ctx.spriteProgram, 'u_alpha', 1.0);
-      gl.activeTexture(gl.TEXTURE0);
-      gl.bindTexture(gl.TEXTURE_2D, this.atlas.texture);
-      ctx.setUniformInt(ctx.spriteProgram, 'u_atlas', 0);
+    for (const sprite of sorted) {
+      const isMask = sprite.textureName && sprite.maskName;
 
-      for (const sprite of regularSprites) {
+      if (isMask) {
+        if (!showTextures) continue;
+
+        const maskName = sprite.maskName.toLowerCase();
+        const texName = sprite.textureName.toLowerCase();
+        const maskRegion = this.maskRegions.get(maskName);
+        const maskSize = this.maskSizes.get(maskName);
+        const tilingTex = this.tilingTextures.get(texName);
+        if (!maskRegion || !maskSize || !tilingTex) continue;
+
+        if (currentShader !== 'mask') {
+          const prog = ctx.maskSpriteProgram;
+          ctx.useProgram(prog);
+          ctx.setUniform(prog, 'u_viewProjection', viewProj);
+          gl.activeTexture(gl.TEXTURE0);
+          gl.bindTexture(gl.TEXTURE_2D, this.atlas.texture);
+          ctx.setUniformInt(prog, 'u_maskAtlas', 0);
+          currentShader = 'mask';
+        }
+
+        this.applyClipping(gl, sprite.clipping);
+
+        const prog = ctx.maskSpriteProgram;
+
+        gl.activeTexture(gl.TEXTURE1);
+        gl.bindTexture(gl.TEXTURE_2D, tilingTex.glTex);
+        ctx.setUniformInt(prog, 'u_texture', 1);
+
+        ctx.setUniform(prog, 'u_textureSize', new Float32Array([
+          tilingTex.w * PX_TO_M,
+          tilingTex.h * PX_TO_M,
+        ]));
+
+        const wMeters = maskSize.w * PX_TO_M;
+        const hMeters = maskSize.h * PX_TO_M;
+        const originX = sprite.r.x;
+        const originY = -sprite.r.y - hMeters;
+
+        ctx.setUniform(prog, 'u_origin', new Float32Array([originX, originY]));
+        ctx.setUniform(prog, 'u_extentU', new Float32Array([wMeters, 0]));
+        ctx.setUniform(prog, 'u_extentV', new Float32Array([0, hMeters]));
+        ctx.setUniform(prog, 'u_uvRect', new Float32Array([
+          maskRegion.u0, maskRegion.v0,
+          maskRegion.u1 - maskRegion.u0, maskRegion.v1 - maskRegion.v0,
+        ]));
+
+        gl.bindVertexArray(ctx.quadVAO);
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+        gl.bindVertexArray(null);
+      } else {
+        if (!showPictures) continue;
+
         const region = this.regions.get(sprite.pictureName.toLowerCase());
         if (!region) continue;
         const size = this.picSizes.get(sprite.pictureName.toLowerCase());
         if (!size) continue;
+
+        if (currentShader !== 'sprite') {
+          ctx.useProgram(ctx.spriteProgram);
+          ctx.setUniform(ctx.spriteProgram, 'u_viewProjection', viewProj);
+          ctx.setUniform(ctx.spriteProgram, 'u_alpha', 1.0);
+          gl.activeTexture(gl.TEXTURE0);
+          gl.bindTexture(gl.TEXTURE_2D, this.atlas.texture);
+          ctx.setUniformInt(ctx.spriteProgram, 'u_atlas', 0);
+          currentShader = 'sprite';
+        }
 
         this.applyClipping(gl, sprite.clipping);
 
@@ -132,59 +186,7 @@ export class PictureRenderer {
       }
     }
 
-    // ── Draw texture-mask sprites with mask shader (skipped when showTextures is off) ──
-    if (showTextures && maskSprites.length > 0) {
-      const prog = ctx.maskSpriteProgram;
-      ctx.useProgram(prog);
-      ctx.setUniform(prog, 'u_viewProjection', viewProj);
-
-      // Bind mask atlas to TEXTURE0
-      gl.activeTexture(gl.TEXTURE0);
-      gl.bindTexture(gl.TEXTURE_2D, this.atlas.texture);
-      ctx.setUniformInt(prog, 'u_maskAtlas', 0);
-
-      for (const sprite of maskSprites) {
-        const maskName = sprite.maskName.toLowerCase();
-        const texName = sprite.textureName.toLowerCase();
-
-        const maskRegion = this.maskRegions.get(maskName);
-        const maskSize = this.maskSizes.get(maskName);
-        const tilingTex = this.tilingTextures.get(texName);
-        if (!maskRegion || !maskSize || !tilingTex) continue;
-
-        this.applyClipping(gl, sprite.clipping);
-
-        // Bind tiling texture to TEXTURE1
-        gl.activeTexture(gl.TEXTURE1);
-        gl.bindTexture(gl.TEXTURE_2D, tilingTex.glTex);
-        ctx.setUniformInt(prog, 'u_texture', 1);
-
-        // Texture size in world meters for tiling
-        ctx.setUniform(prog, 'u_textureSize', new Float32Array([
-          tilingTex.w * PX_TO_M,
-          tilingTex.h * PX_TO_M,
-        ]));
-
-        const wMeters = maskSize.w * PX_TO_M;
-        const hMeters = maskSize.h * PX_TO_M;
-        const originX = sprite.r.x;
-        const originY = -sprite.r.y - hMeters;
-
-        // Set quad uniforms and draw
-        ctx.setUniform(prog, 'u_origin', new Float32Array([originX, originY]));
-        ctx.setUniform(prog, 'u_extentU', new Float32Array([wMeters, 0]));
-        ctx.setUniform(prog, 'u_extentV', new Float32Array([0, hMeters]));
-        ctx.setUniform(prog, 'u_uvRect', new Float32Array([
-          maskRegion.u0, maskRegion.v0,
-          maskRegion.u1 - maskRegion.u0, maskRegion.v1 - maskRegion.v0,
-        ]));
-
-        gl.bindVertexArray(ctx.quadVAO);
-        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-        gl.bindVertexArray(null);
-      }
-
-      // Restore active texture to TEXTURE0
+    if (currentShader === 'mask') {
       gl.activeTexture(gl.TEXTURE0);
     }
 
