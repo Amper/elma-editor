@@ -12,7 +12,7 @@ import { GameOverlay } from '@/game/GameOverlay';
 import { Minimap } from '@/components/Minimap';
 import { CommandPalette } from '@/components/CommandPalette';
 import { HotkeysPanel } from '@/components/HotkeysPanel';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useEditorStore } from '@/state/editorStore';
 import { useLibraryStore } from '@/state/libraryStore';
 import { ToolId } from '@/types';
@@ -78,6 +78,40 @@ export function App() {
   const showToolPanel = !!level && !toolPanelCollapsed && (hasSelection || debugStartSelected || TOOLS_WITH_PANEL.has(activeTool));
   const showChrome = !isTesting && !showLevelScreen;
 
+  // Dynamic two-column toolbar when buttons overflow vertically
+  const toolbarRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = toolbarRef.current;
+    if (!el) return;
+
+    const check = () => {
+      if (window.innerWidth <= 767) {
+        el.classList.remove('toolbar--compact', 'toolbar--two-cols');
+        return;
+      }
+      // 1. Try default (big icons with text)
+      el.classList.remove('toolbar--compact', 'toolbar--two-cols');
+      if (el.scrollHeight <= el.clientHeight + 1) return;
+      // 2. Try compact single column (small icons, no text)
+      el.classList.add('toolbar--compact');
+      if (el.scrollHeight <= el.clientHeight + 1) return;
+      // 3. Two columns
+      el.classList.remove('toolbar--compact');
+      el.classList.add('toolbar--two-cols');
+    };
+
+    let timer: ReturnType<typeof setTimeout>;
+    const onResize = () => { clearTimeout(timer); timer = setTimeout(check, 50); };
+    window.addEventListener('resize', onResize);
+
+    const mo = new MutationObserver(() => setTimeout(check, 0));
+    mo.observe(el, { childList: true });
+
+    check();
+
+    return () => { window.removeEventListener('resize', onResize); mo.disconnect(); clearTimeout(timer); };
+  }, [toolbarViewMode, toolbarButtonSize, showActionsBar, showStatusBar]);
+
   return (
     <div className={`app-layout${isTesting ? ' app-layout--testing' : ''}`} style={!isTesting && (!showActionsBar || !showStatusBar) ? { gridTemplateRows: `${showActionsBar ? 'var(--menubar-height)' : '0'} 1fr ${showStatusBar ? 'var(--statusbar-height)' : '0'}` } : undefined}>
       {!isTesting && showActionsBar && (
@@ -99,7 +133,7 @@ export function App() {
         </div>
       )}
       {!isTesting && (
-        <div className="toolbar" data-view={toolbarViewMode} data-size={toolbarButtonSize}>
+        <div ref={toolbarRef} className="toolbar" data-view={toolbarViewMode} data-size={toolbarButtonSize}>
           <Toolbar />
           {showChrome && showPropertiesPanel && (
             <div className="settings-panel">

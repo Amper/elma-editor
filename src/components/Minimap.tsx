@@ -203,6 +203,7 @@ export function Minimap() {
   return (
     <canvas
       ref={canvasRef}
+      className="minimap"
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}

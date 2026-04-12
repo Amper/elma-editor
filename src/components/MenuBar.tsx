@@ -73,6 +73,10 @@ function TestModeButton({
   const modeLabel = testMode === 'debug' ? 'Debug' : 'Normal';
   const modeColor = testMode === 'debug' ? '#e0a030' : '#6cc66c';
 
+  const dropdownPos = open && ref.current
+    ? (() => { const r = ref.current.getBoundingClientRect(); return { top: r.bottom, left: r.left }; })()
+    : null;
+
   return (
     <div ref={ref} style={{ position: 'relative', display: 'inline-flex', alignSelf: 'stretch' }}>
       <button
@@ -94,13 +98,13 @@ function TestModeButton({
       >
         <CaretDownIcon size={10} />
       </button>
-      {open && (
+      {open && dropdownPos && (
         <div
           style={{
-            position: 'absolute',
-            top: '100%',
-            left: 0,
-            zIndex: 100,
+            position: 'fixed',
+            top: dropdownPos.top,
+            left: dropdownPos.left,
+            zIndex: 300,
             background: 'var(--color-bg-secondary)',
             border: '1px solid var(--color-border)',
             borderRadius: 4,
