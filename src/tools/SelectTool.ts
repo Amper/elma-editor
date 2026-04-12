@@ -24,7 +24,7 @@ import { OBJECT_RADIUS } from 'elmajs';
 import { getTheme, withAlpha } from '@/canvas/themeColors';
 import { getEditorLgr } from '@/canvas/lgrCache';
 
-type SelectState = 'idle' | 'moving' | 'rubber-band' | 'resizing' | 'rotating' | 'vertex-editing';
+type SelectState = 'idle' | 'moving' | 'rubber-band' | 'pending-rubber-band' | 'resizing' | 'rotating' | 'vertex-editing';
 
 export class SelectTool implements EditorTool {
   private state: SelectState = 'idle';
@@ -218,7 +218,7 @@ export class SelectTool implements EditorTool {
       } else {
         this.selectPolygon(hit.polygonId, hit.polygonIndex, e.shiftKey, store);
         if (e.shiftKey || e.ctrlKey) {
-          this.state = 'rubber-band';
+          this.state = 'pending-rubber-band';
           this.dragStart = e.worldPos;
           this.dragCurrent = e.worldPos;
         } else {
@@ -234,7 +234,7 @@ export class SelectTool implements EditorTool {
       } else {
         this.selectObject(hit.objectId, e.shiftKey, store);
         if (e.shiftKey || e.ctrlKey) {
-          this.state = 'rubber-band';
+          this.state = 'pending-rubber-band';
           this.dragStart = e.worldPos;
           this.dragCurrent = e.worldPos;
         } else {
@@ -250,7 +250,7 @@ export class SelectTool implements EditorTool {
       } else {
         this.selectPicture(hit.pictureId, e.shiftKey, store);
         if (e.shiftKey || e.ctrlKey) {
-          this.state = 'rubber-band';
+          this.state = 'pending-rubber-band';
           this.dragStart = e.worldPos;
           this.dragCurrent = e.worldPos;
         } else {
@@ -266,7 +266,7 @@ export class SelectTool implements EditorTool {
       } else {
         this.selectPolygon(hit.polygonId, hit.polygonIndex, e.shiftKey, store);
         if (e.shiftKey || e.ctrlKey) {
-          this.state = 'rubber-band';
+          this.state = 'pending-rubber-band';
           this.dragStart = e.worldPos;
           this.dragCurrent = e.worldPos;
         } else {
@@ -341,6 +341,9 @@ export class SelectTool implements EditorTool {
       this.applyResize(e.worldPos, store);
     } else if (this.state === 'rotating') {
       this.applyRotation(e.worldPos, store);
+    } else if (this.state === 'pending-rubber-band') {
+      this.state = 'rubber-band';
+      this.dragCurrent = e.worldPos;
     } else if (this.state === 'rubber-band') {
       this.dragCurrent = e.worldPos;
     } else if (this.state === 'idle' && store.level) {
@@ -410,7 +413,8 @@ export class SelectTool implements EditorTool {
     } else if (this.state === 'rubber-band') {
       this.commitRubberBand();
     }
-    // All active states (moving, resizing, rotating, rubber-band) return to idle
+    // pending-rubber-band: no drag happened, selection toggle already applied — just go idle
+    // All active states (moving, resizing, rotating, rubber-band, pending-rubber-band) return to idle
     this.state = 'idle';
   }
 
