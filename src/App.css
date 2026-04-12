@@ -184,6 +184,53 @@
   margin: 4px 0;
 }
 
+.canvas-context-menu__submenu {
+  position: relative;
+}
+
+.canvas-context-menu__submenu-trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 12px;
+  border: none;
+  background: none;
+  color: var(--color-text-primary);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.canvas-context-menu__submenu-trigger:hover {
+  background: var(--color-bg-hover);
+}
+
+.canvas-context-menu__submenu-arrow {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--color-text-secondary);
+}
+
+.canvas-context-menu__submenu-panel {
+  display: none;
+  position: absolute;
+  left: 100%;
+  top: -4px;
+  z-index: 201;
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  padding: 4px 0;
+  min-width: 200px;
+}
+
+.canvas-context-menu__submenu:hover > .canvas-context-menu__submenu-panel {
+  display: block;
+}
+
 .canvas-area {
   grid-row: 2;
   grid-column: 2;

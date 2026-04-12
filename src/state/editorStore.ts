@@ -28,6 +28,7 @@ import { autoGrassPolygon, type AutoGrassConfig } from '@/utils/autoGrass';
 import { smoothPolygonVertices } from '@/utils/smoothPolygon';
 import { simplifyPolygon } from '@/utils/imageTrace';
 import { pointInPolygon, computeSignedArea, computeBBox } from '@/utils/geometry';
+import { getEditorLgr } from '@/canvas/lgrCache';
 import { generateId } from '@/utils/generateId';
 import { polyIdToIndex, objectIdToIndex, pictureIdToIndex } from '@/utils/idLookup';
 import type { Operation } from '@/collab/operations';
@@ -476,6 +477,14 @@ export interface EditorState {
   autoGrassSelectedPolygons: () => void;
   mirrorHorizontally: () => void;
   mirrorVertically: () => void;
+  alignLeft: () => void;
+  alignCenterH: () => void;
+  alignRight: () => void;
+  distributeH: () => void;
+  alignTop: () => void;
+  alignCenterV: () => void;
+  alignBottom: () => void;
+  distributeV: () => void;
   smoothSelectedPolygons: () => void;
   simplifySelectedPolygons: () => void;
 
@@ -1433,6 +1442,166 @@ export const useEditorStore = create<EditorState>()(
           else if (mirrorOps.length > 1) broadcast({ type: 'batch', operations: mirrorOps }, level);
         }
       },
+
+      // ── Alignment & Distribution helpers ──
+
+      ...(() => {
+        interface AlignItem {
+          kind: 'polygon' | 'object' | 'picture';
+          id: string;
+          minX: number; minY: number; maxX: number; maxY: number;
+          cx: number; cy: number;
+        }
+
+        function collectItems(level: Level, selection: SelectionState): AlignItem[] {
+          const items: AlignItem[] = [];
+          const lgr = getEditorLgr();
+          for (const poly of level.polygons) {
+            if (!selection.polygonIds.has(poly.id)) continue;
+            const bb = computeBBox(poly.vertices);
+            items.push({ kind: 'polygon', id: poly.id, ...bb, cx: (bb.minX + bb.maxX) / 2, cy: (bb.minY + bb.maxY) / 2 });
+          }
+          for (const obj of level.objects) {
+            if (!selection.objectIds.has(obj.id)) continue;
+            const x = obj.position.x, y = obj.position.y;
+            items.push({ kind: 'object', id: obj.id, minX: x, minY: y, maxX: x, maxY: y, cx: x, cy: y });
+          }
+          for (const pic of level.pictures) {
+            if (!selection.pictureIds.has(pic.id)) continue;
+            const isTexMask = !!(pic.texture && pic.mask);
+            const data = isTexMask ? lgr?.masks.get(pic.mask) : lgr?.pictures.get(pic.name);
+            const w = data ? data.worldW : 0.6;
+            const h = data ? data.worldH : 0.6;
+            const px = pic.position.x, py = pic.position.y;
+            items.push({ kind: 'picture', id: pic.id, minX: px, minY: py, maxX: px + w, maxY: py + h, cx: px + w / 2, cy: py + h / 2 });
+          }
+          return items;
+        }
+
+        function applyDeltas(
+          level: Level, selection: SelectionState,
+          deltas: Map<string, { dx: number; dy: number }>,
+          broadcastFn: (op: Operation, before: Level) => void,
+          setFn: (s: Partial<EditorState>) => void,
+        ) {
+          const clone = cloneLevel(level);
+          const vertMoves: Array<{ polyId: string; vertIdx: number; newPos: Vec2 }> = [];
+          const objMoves: Array<{ objectId: string; newPos: Vec2 }> = [];
+          const picMoves: Array<{ pictureId: string; newPos: Vec2 }> = [];
+
+          for (const poly of clone.polygons) {
+            const d = deltas.get(poly.id);
+            if (!d || !selection.polygonIds.has(poly.id)) continue;
+            for (let i = 0; i < poly.vertices.length; i++) {
+              poly.vertices[i] = new Position(poly.vertices[i]!.x + d.dx, poly.vertices[i]!.y + d.dy);
+              vertMoves.push({ polyId: poly.id, vertIdx: i, newPos: { x: poly.vertices[i]!.x, y: poly.vertices[i]!.y } });
+            }
+          }
+          for (const obj of clone.objects) {
+            const d = deltas.get(obj.id);
+            if (!d || !selection.objectIds.has(obj.id)) continue;
+            obj.position = new Position(obj.position.x + d.dx, obj.position.y + d.dy);
+            objMoves.push({ objectId: obj.id, newPos: { x: obj.position.x, y: obj.position.y } });
+          }
+          for (const pic of clone.pictures) {
+            const d = deltas.get(pic.id);
+            if (!d || !selection.pictureIds.has(pic.id)) continue;
+            pic.position = new Position(pic.position.x + d.dx, pic.position.y + d.dy);
+            picMoves.push({ pictureId: pic.id, newPos: { x: pic.position.x, y: pic.position.y } });
+          }
+
+          setFn({ level: clone, isDirty: true });
+          const ops: Operation[] = [];
+          if (vertMoves.length > 0) ops.push({ type: 'moveVertices', moves: vertMoves });
+          if (objMoves.length > 0) ops.push({ type: 'moveObjects', moves: objMoves });
+          if (picMoves.length > 0) ops.push({ type: 'movePictures', moves: picMoves });
+          if (ops.length === 1) broadcastFn(ops[0]!, level);
+          else if (ops.length > 1) broadcastFn({ type: 'batch', operations: ops }, level);
+        }
+
+        function alignAction(
+          getFn: () => EditorState,
+          setFn: (s: Partial<EditorState>) => void,
+          broadcastFn: (op: Operation, before: Level) => void,
+          computeDeltas: (items: AlignItem[]) => Map<string, { dx: number; dy: number }>,
+          minItems: number,
+        ) {
+          const { level, selection } = getFn();
+          if (!level) return;
+          const items = collectItems(level, selection);
+          if (items.length < minItems) return;
+          const deltas = computeDeltas(items);
+          applyDeltas(level, selection, deltas, broadcastFn, setFn);
+        }
+
+        return {
+          alignLeft: () => alignAction(get, set, broadcast, (items) => {
+            const target = Math.min(...items.map(i => i.minX));
+            const d = new Map<string, { dx: number; dy: number }>();
+            for (const it of items) d.set(it.id, { dx: target - it.minX, dy: 0 });
+            return d;
+          }, 2),
+
+          alignCenterH: () => alignAction(get, set, broadcast, (items) => {
+            const all = items.flatMap(i => [i.minX, i.maxX]);
+            const target = (Math.min(...all) + Math.max(...all)) / 2;
+            const d = new Map<string, { dx: number; dy: number }>();
+            for (const it of items) d.set(it.id, { dx: target - it.cx, dy: 0 });
+            return d;
+          }, 2),
+
+          alignRight: () => alignAction(get, set, broadcast, (items) => {
+            const target = Math.max(...items.map(i => i.maxX));
+            const d = new Map<string, { dx: number; dy: number }>();
+            for (const it of items) d.set(it.id, { dx: target - it.maxX, dy: 0 });
+            return d;
+          }, 2),
+
+          distributeH: () => alignAction(get, set, broadcast, (items) => {
+            const sorted = [...items].sort((a, b) => a.cx - b.cx);
+            const first = sorted[0]!, last = sorted[sorted.length - 1]!;
+            const spacing = (last.cx - first.cx) / (sorted.length - 1);
+            const d = new Map<string, { dx: number; dy: number }>();
+            for (let i = 0; i < sorted.length; i++) {
+              d.set(sorted[i]!.id, { dx: first.cx + i * spacing - sorted[i]!.cx, dy: 0 });
+            }
+            return d;
+          }, 3),
+
+          alignTop: () => alignAction(get, set, broadcast, (items) => {
+            const target = Math.min(...items.map(i => i.minY));
+            const d = new Map<string, { dx: number; dy: number }>();
+            for (const it of items) d.set(it.id, { dx: 0, dy: target - it.minY });
+            return d;
+          }, 2),
+
+          alignCenterV: () => alignAction(get, set, broadcast, (items) => {
+            const all = items.flatMap(i => [i.minY, i.maxY]);
+            const target = (Math.min(...all) + Math.max(...all)) / 2;
+            const d = new Map<string, { dx: number; dy: number }>();
+            for (const it of items) d.set(it.id, { dx: 0, dy: target - it.cy });
+            return d;
+          }, 2),
+
+          alignBottom: () => alignAction(get, set, broadcast, (items) => {
+            const target = Math.max(...items.map(i => i.maxY));
+            const d = new Map<string, { dx: number; dy: number }>();
+            for (const it of items) d.set(it.id, { dx: 0, dy: target - it.maxY });
+            return d;
+          }, 2),
+
+          distributeV: () => alignAction(get, set, broadcast, (items) => {
+            const sorted = [...items].sort((a, b) => a.cy - b.cy);
+            const first = sorted[0]!, last = sorted[sorted.length - 1]!;
+            const spacing = (last.cy - first.cy) / (sorted.length - 1);
+            const d = new Map<string, { dx: number; dy: number }>();
+            for (let i = 0; i < sorted.length; i++) {
+              d.set(sorted[i]!.id, { dx: 0, dy: first.cy + i * spacing - sorted[i]!.cy });
+            }
+            return d;
+          }, 3),
+        };
+      })(),
 
       smoothSelectedPolygons: () => {
         const { level, selection } = get();

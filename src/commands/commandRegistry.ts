@@ -42,6 +42,16 @@ function hasPolygonSelection(): boolean {
   return useEditorStore.getState().selection.polygonIds.size > 0;
 }
 
+function hasMultipleSelection(): boolean {
+  const s = useEditorStore.getState().selection;
+  return (s.polygonIds.size + s.objectIds.size + s.pictureIds.size) >= 2;
+}
+
+function hasDistributeSelection(): boolean {
+  const s = useEditorStore.getState().selection;
+  return (s.polygonIds.size + s.objectIds.size + s.pictureIds.size) >= 3;
+}
+
 export const COMMANDS: Command[] = [
   // ── Tools ──
   { id: 'tool.select', label: 'Select Tool', category: 'Tools', shortcut: 'S',
@@ -177,6 +187,32 @@ export const COMMANDS: Command[] = [
   { id: 'polygon.simplify', label: 'Simplify Polygons', category: 'Polygon',
     execute: () => useEditorStore.getState().simplifySelectedPolygons(),
     isEnabled: hasPolygonSelection },
+
+  // ── Alignment & Distribution ──
+  { id: 'align.left', label: 'Align Left', category: 'Selection',
+    execute: () => useEditorStore.getState().alignLeft(),
+    isEnabled: hasMultipleSelection },
+  { id: 'align.center-h', label: 'Align Center Horizontally', category: 'Selection',
+    execute: () => useEditorStore.getState().alignCenterH(),
+    isEnabled: hasMultipleSelection },
+  { id: 'align.right', label: 'Align Right', category: 'Selection',
+    execute: () => useEditorStore.getState().alignRight(),
+    isEnabled: hasMultipleSelection },
+  { id: 'distribute.horizontal', label: 'Distribute Horizontally', category: 'Selection',
+    execute: () => useEditorStore.getState().distributeH(),
+    isEnabled: hasDistributeSelection },
+  { id: 'align.top', label: 'Align Top', category: 'Selection',
+    execute: () => useEditorStore.getState().alignTop(),
+    isEnabled: hasMultipleSelection },
+  { id: 'align.center-v', label: 'Align Center Vertically', category: 'Selection',
+    execute: () => useEditorStore.getState().alignCenterV(),
+    isEnabled: hasMultipleSelection },
+  { id: 'align.bottom', label: 'Align Bottom', category: 'Selection',
+    execute: () => useEditorStore.getState().alignBottom(),
+    isEnabled: hasMultipleSelection },
+  { id: 'distribute.vertical', label: 'Distribute Vertically', category: 'Selection',
+    execute: () => useEditorStore.getState().distributeV(),
+    isEnabled: hasDistributeSelection },
 
   // ── View ──
   { id: 'view.grid', label: 'Toggle Grid', category: 'View', shortcut: 'G',

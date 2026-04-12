@@ -4,9 +4,18 @@ import { useLibraryStore } from '@/state/libraryStore';
 import { undo, redo } from '@/state/selectors';
 import { computeBBox } from '@/utils/geometry';
 import {
+  AlignBottomIcon,
+  AlignCenterHorizontalIcon,
+  AlignCenterVerticalIcon,
+  AlignLeftIcon,
+  AlignRightIcon,
+  AlignTopIcon,
+  ArrowsOutLineHorizontalIcon,
+  ArrowsOutLineVerticalIcon,
   ArrowUDownLeftIcon,
   ArrowUUpRightIcon,
   BookmarkSimpleIcon,
+  CaretRightIcon,
   CheckIcon,
   ClipboardIcon,
   CopyIcon,
@@ -53,6 +62,14 @@ export function CanvasContextMenu({ x, y, onClose }: Props) {
   const autoGrassSelectedPolygons = useEditorStore((s) => s.autoGrassSelectedPolygons);
   const mirrorHorizontally = useEditorStore((s) => s.mirrorHorizontally);
   const mirrorVertically = useEditorStore((s) => s.mirrorVertically);
+  const alignLeft = useEditorStore((s) => s.alignLeft);
+  const alignCenterH = useEditorStore((s) => s.alignCenterH);
+  const alignRight = useEditorStore((s) => s.alignRight);
+  const distributeH = useEditorStore((s) => s.distributeH);
+  const alignTop = useEditorStore((s) => s.alignTop);
+  const alignCenterV = useEditorStore((s) => s.alignCenterV);
+  const alignBottom = useEditorStore((s) => s.alignBottom);
+  const distributeV = useEditorStore((s) => s.distributeV);
   const smoothSelectedPolygons = useEditorStore((s) => s.smoothSelectedPolygons);
   const simplifySelectedPolygons = useEditorStore((s) => s.simplifySelectedPolygons);
   const removePolygons = useEditorStore((s) => s.removePolygons);
@@ -65,6 +82,9 @@ export function CanvasContextMenu({ x, y, onClose }: Props) {
   const [showSaveModal, setShowSaveModal] = useState(false);
 
   const hasSelection = selection.polygonIds.size > 0 || selection.objectIds.size > 0 || selection.pictureIds.size > 0;
+  const selItemCount = selection.polygonIds.size + selection.objectIds.size + selection.pictureIds.size;
+  const hasMultipleItems = selItemCount >= 2;
+  const hasDistributeItems = selItemCount >= 3;
   const canPaste = clipboard !== null;
   const canMerge = selection.polygonIds.size >= 1;
   const canSplit = selection.polygonIds.size >= 1 && selection.polygonIds.size <= 2;
@@ -210,6 +230,51 @@ export function CanvasContextMenu({ x, y, onClose }: Props) {
             <FlipVerticalIcon size={14} />
             <span className="canvas-context-menu__label">Mirror vertically</span>
           </button>
+        )}
+        {hasMultipleItems && <div className="canvas-context-menu__divider" />}
+        {hasMultipleItems && (
+          <div className="canvas-context-menu__submenu">
+            <div className="canvas-context-menu__submenu-trigger">
+              <AlignLeftIcon size={14} />
+              <span className="canvas-context-menu__label">Align & Distribute</span>
+              <CaretRightIcon size={10} className="canvas-context-menu__submenu-arrow" />
+            </div>
+            <div className="canvas-context-menu__submenu-panel">
+              <button className="canvas-context-menu__item" onClick={act(alignLeft)}>
+                <AlignLeftIcon size={14} />
+                <span className="canvas-context-menu__label">Align left</span>
+              </button>
+              <button className="canvas-context-menu__item" onClick={act(alignCenterH)}>
+                <AlignCenterHorizontalIcon size={14} />
+                <span className="canvas-context-menu__label">Align center horizontally</span>
+              </button>
+              <button className="canvas-context-menu__item" onClick={act(alignRight)}>
+                <AlignRightIcon size={14} />
+                <span className="canvas-context-menu__label">Align right</span>
+              </button>
+              <button className="canvas-context-menu__item" onClick={act(distributeH)} disabled={!hasDistributeItems}>
+                <ArrowsOutLineHorizontalIcon size={14} />
+                <span className="canvas-context-menu__label">Distribute horizontally</span>
+              </button>
+              <div className="canvas-context-menu__divider" />
+              <button className="canvas-context-menu__item" onClick={act(alignTop)}>
+                <AlignTopIcon size={14} />
+                <span className="canvas-context-menu__label">Align top</span>
+              </button>
+              <button className="canvas-context-menu__item" onClick={act(alignCenterV)}>
+                <AlignCenterVerticalIcon size={14} />
+                <span className="canvas-context-menu__label">Align center vertically</span>
+              </button>
+              <button className="canvas-context-menu__item" onClick={act(alignBottom)}>
+                <AlignBottomIcon size={14} />
+                <span className="canvas-context-menu__label">Align bottom</span>
+              </button>
+              <button className="canvas-context-menu__item" onClick={act(distributeV)} disabled={!hasDistributeItems}>
+                <ArrowsOutLineVerticalIcon size={14} />
+                <span className="canvas-context-menu__label">Distribute vertically</span>
+              </button>
+            </div>
+          </div>
         )}
         {selection.polygonIds.size > 0 && (
           <button className="canvas-context-menu__item" onClick={act(smoothSelectedPolygons)}>

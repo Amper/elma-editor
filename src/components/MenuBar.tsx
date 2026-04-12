@@ -5,6 +5,14 @@ import { undo, redo } from '@/state/selectors';
 import { computeBBox } from '@/utils/geometry';
 import type { TestMode } from '@/types';
 import {
+  AlignBottomIcon,
+  AlignCenterHorizontalIcon,
+  AlignCenterVerticalIcon,
+  AlignLeftIcon,
+  AlignRightIcon,
+  AlignTopIcon,
+  ArrowsOutLineHorizontalIcon,
+  ArrowsOutLineVerticalIcon,
   ArrowUDownLeftIcon,
   ArrowUUpRightIcon,
   BookmarkSimpleIcon,
@@ -286,6 +294,118 @@ function PolygonActionsMenu({
   );
 }
 
+function AlignActionsMenu({
+  hasMultipleItems,
+  hasDistributeItems,
+  alignLeft,
+  alignCenterH,
+  alignRight,
+  distributeH,
+  alignTop,
+  alignCenterV,
+  alignBottom,
+  distributeV,
+  showIcon,
+  showLabel,
+  iconSize,
+}: {
+  hasMultipleItems: boolean;
+  hasDistributeItems: boolean;
+  alignLeft: () => void;
+  alignCenterH: () => void;
+  alignRight: () => void;
+  distributeH: () => void;
+  alignTop: () => void;
+  alignCenterV: () => void;
+  alignBottom: () => void;
+  distributeV: () => void;
+  showIcon: boolean;
+  showLabel: boolean;
+  iconSize: number;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  const run = (fn: () => void) => {
+    fn();
+    setOpen(false);
+  };
+
+  return (
+    <div ref={ref} style={{ position: 'relative', display: 'inline-flex', alignSelf: 'stretch' }}>
+      <button
+        onClick={() => setOpen(!open)}
+        className="btn btn--text"
+        title="Align & Distribute"
+        disabled={!hasMultipleItems}
+      >
+        {showIcon && <AlignLeftIcon size={iconSize} />}
+        {showLabel && <span className="btn--text-label">Align</span>}
+        <CaretDownIcon size={10} style={{ marginLeft: 2 }} />
+      </button>
+      {open && (
+        <div
+          style={{
+            position: 'absolute',
+            top: '100%',
+            left: 0,
+            zIndex: 100,
+            background: 'var(--color-bg-secondary)',
+            border: '1px solid var(--color-border)',
+            borderRadius: 'var(--radius-md)',
+            padding: '4px 0',
+            minWidth: 200,
+            boxShadow: '0 4px 12px rgba(0,0,0,0.25)',
+          }}
+        >
+          <button className="toolbar-context-menu__item" onClick={() => run(alignLeft)}>
+            <AlignLeftIcon size={14} />
+            <span className="toolbar-context-menu__label">Align left</span>
+          </button>
+          <button className="toolbar-context-menu__item" onClick={() => run(alignCenterH)}>
+            <AlignCenterHorizontalIcon size={14} />
+            <span className="toolbar-context-menu__label">Align center horizontally</span>
+          </button>
+          <button className="toolbar-context-menu__item" onClick={() => run(alignRight)}>
+            <AlignRightIcon size={14} />
+            <span className="toolbar-context-menu__label">Align right</span>
+          </button>
+          <button className="toolbar-context-menu__item" onClick={() => run(distributeH)} disabled={!hasDistributeItems}>
+            <ArrowsOutLineHorizontalIcon size={14} />
+            <span className="toolbar-context-menu__label">Distribute horizontally</span>
+          </button>
+          <div className="toolbar-context-menu__divider" />
+          <button className="toolbar-context-menu__item" onClick={() => run(alignTop)}>
+            <AlignTopIcon size={14} />
+            <span className="toolbar-context-menu__label">Align top</span>
+          </button>
+          <button className="toolbar-context-menu__item" onClick={() => run(alignCenterV)}>
+            <AlignCenterVerticalIcon size={14} />
+            <span className="toolbar-context-menu__label">Align center vertically</span>
+          </button>
+          <button className="toolbar-context-menu__item" onClick={() => run(alignBottom)}>
+            <AlignBottomIcon size={14} />
+            <span className="toolbar-context-menu__label">Align bottom</span>
+          </button>
+          <button className="toolbar-context-menu__item" onClick={() => run(distributeV)} disabled={!hasDistributeItems}>
+            <ArrowsOutLineVerticalIcon size={14} />
+            <span className="toolbar-context-menu__label">Distribute vertically</span>
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function MenuBar() {
   const level = useEditorStore((s) => s.level);
   const selection = useEditorStore((s) => s.selection);
@@ -304,6 +424,14 @@ export function MenuBar() {
   const autoGrassSelectedPolygons = useEditorStore((s) => s.autoGrassSelectedPolygons);
   const mirrorHorizontally = useEditorStore((s) => s.mirrorHorizontally);
   const mirrorVertically = useEditorStore((s) => s.mirrorVertically);
+  const alignLeft = useEditorStore((s) => s.alignLeft);
+  const alignCenterH = useEditorStore((s) => s.alignCenterH);
+  const alignRight = useEditorStore((s) => s.alignRight);
+  const distributeH = useEditorStore((s) => s.distributeH);
+  const alignTop = useEditorStore((s) => s.alignTop);
+  const alignCenterV = useEditorStore((s) => s.alignCenterV);
+  const alignBottom = useEditorStore((s) => s.alignBottom);
+  const distributeV = useEditorStore((s) => s.distributeV);
   const smoothSelectedPolygons = useEditorStore((s) => s.smoothSelectedPolygons);
   const simplifySelectedPolygons = useEditorStore((s) => s.simplifySelectedPolygons);
   const removePolygons = useEditorStore((s) => s.removePolygons);
@@ -340,6 +468,9 @@ export function MenuBar() {
   );
   const canEditVertices = activeTool === ToolId.Select && toggleSelectVertexEditing != null &&
     (selectVertexEditing || selection.polygonIds.size === 1);
+  const selItemCount = selection.polygonIds.size + selection.objectIds.size + selection.pictureIds.size;
+  const hasMultipleItems = selItemCount >= 2;
+  const hasDistributeItems = selItemCount >= 3;
 
   const [showSaveModal, setShowSaveModal] = useState(false);
 
@@ -423,6 +554,21 @@ export function MenuBar() {
             simplifySelectedPolygons={simplifySelectedPolygons}
             autoGrassSelectedPolygons={autoGrassSelectedPolygons}
             toggleSelectVertexEditing={toggleSelectVertexEditing!}
+            showIcon={showIcon}
+            showLabel={showLabel}
+            iconSize={iconSize}
+          />
+          <AlignActionsMenu
+            hasMultipleItems={hasMultipleItems}
+            hasDistributeItems={hasDistributeItems}
+            alignLeft={alignLeft}
+            alignCenterH={alignCenterH}
+            alignRight={alignRight}
+            distributeH={distributeH}
+            alignTop={alignTop}
+            alignCenterV={alignCenterV}
+            alignBottom={alignBottom}
+            distributeV={distributeV}
             showIcon={showIcon}
             showLabel={showLabel}
             iconSize={iconSize}
