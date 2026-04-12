@@ -217,7 +217,13 @@ export class SelectTool implements EditorTool {
         this.startMove(e.worldPos, store);
       } else {
         this.selectPolygon(hit.polygonId, hit.polygonIndex, e.shiftKey, store);
-        this.startMove(e.worldPos, this.getStore());
+        if (e.shiftKey || e.ctrlKey) {
+          this.state = 'rubber-band';
+          this.dragStart = e.worldPos;
+          this.dragCurrent = e.worldPos;
+        } else {
+          this.startMove(e.worldPos, this.getStore());
+        }
       }
     } else if (hit.kind === 'object') {
       const isAlreadySelected = store.selection.objectIds.has(hit.objectId);
@@ -227,7 +233,13 @@ export class SelectTool implements EditorTool {
         this.startMove(e.worldPos, store);
       } else {
         this.selectObject(hit.objectId, e.shiftKey, store);
-        this.startMove(e.worldPos, this.getStore());
+        if (e.shiftKey || e.ctrlKey) {
+          this.state = 'rubber-band';
+          this.dragStart = e.worldPos;
+          this.dragCurrent = e.worldPos;
+        } else {
+          this.startMove(e.worldPos, this.getStore());
+        }
       }
     } else if (hit.kind === 'picture') {
       const isAlreadySelected = store.selection.pictureIds.has(hit.pictureId);
@@ -237,7 +249,13 @@ export class SelectTool implements EditorTool {
         this.startMove(e.worldPos, store);
       } else {
         this.selectPicture(hit.pictureId, e.shiftKey, store);
-        this.startMove(e.worldPos, this.getStore());
+        if (e.shiftKey || e.ctrlKey) {
+          this.state = 'rubber-band';
+          this.dragStart = e.worldPos;
+          this.dragCurrent = e.worldPos;
+        } else {
+          this.startMove(e.worldPos, this.getStore());
+        }
       }
     } else if (hit.kind === 'polygon') {
       const isAlreadySelected = store.selection.polygonIds.has(hit.polygonId);
@@ -247,8 +265,13 @@ export class SelectTool implements EditorTool {
         this.startMove(e.worldPos, store);
       } else {
         this.selectPolygon(hit.polygonId, hit.polygonIndex, e.shiftKey, store);
-        // Immediately allow dragging after selecting via interior click
-        this.startMove(e.worldPos, this.getStore());
+        if (e.shiftKey || e.ctrlKey) {
+          this.state = 'rubber-band';
+          this.dragStart = e.worldPos;
+          this.dragCurrent = e.worldPos;
+        } else {
+          this.startMove(e.worldPos, this.getStore());
+        }
       }
     } else if (this.frame && this.hitTestFrame(e.worldPos, zoom).kind === 'inside') {
       // Clicked inside the frame but not on any level geometry — start move
